@@ -1,0 +1,18 @@
+[project]
+name = "latentjam-research"
+version = "0.1.0"
+description = "Research and model training code for latentjam on-device music recommendation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "latentjam contributors" }
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
