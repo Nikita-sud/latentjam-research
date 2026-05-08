@@ -1,0 +1,99 @@
+# Curated YouTube search queries for diverse audio training data.
+# Each line is a search phrase; lines starting with # are ignored.
+#
+# Run:
+#   ./ytm_opus.py --from-file scripts/yt_music_queries.txt --search-limit 20 --max-tracks 5000
+#
+# Tune --search-limit to control tracks-per-query and --max-tracks for the
+# overall budget. Add genres / decades / regions you care about.
+
+# rock by decade
+best rock 2024
+best rock 2018
+best rock 2010
+best rock 2000
+best rock 1990
+best rock 1980
+classic rock hits 70s
+
+# pop by decade
+best pop 2024
+best pop 2018
+best pop 2010
+best pop 2000
+best pop 1990
+
+# hip hop
+best hip hop 2024
+best hip hop 2018
+best hip hop 2010
+best rap 2005
+golden era hip hop
+
+# electronic
+best electronic 2024
+best electronic 2018
+edm hits 2020
+house music classics
+techno essentials
+synthwave best
+ambient music
+
+# metal
+best metal 2024
+best metal 2010
+classic metal hits
+death metal essentials
+
+# jazz / blues
+modern jazz 2020s
+classic jazz standards
+blues classics
+
+# folk / indie
+indie folk 2020
+indie folk 2015
+folk acoustic best
+indie rock 2020
+indie rock 2015
+
+# r&b / soul
+best rnb 2024
+best rnb 2010
+classic soul
+
+# country
+country hits 2024
+country classics
+
+# classical
+classical piano essentials
+classical orchestra famous
+
+# punk / alt
+punk rock essentials
+alternative rock 2010
+post-punk classics
+
+# regional
+kpop best 2024
+jpop best
+latin pop 2024
+reggaeton hits
+afrobeats 2024
+russian rock best
+russian rap best
+russian pop best
+
+# niche / electronic subgenres
+phonk 2024
+drum and bass best
+trap music best
+lo-fi hip hop
+hardcore techno
+trance classics
+
+# soundtracks / niche
+movie soundtracks orchestra
+video game soundtracks famous
+anime openings best
