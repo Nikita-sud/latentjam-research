@@ -60,6 +60,10 @@ def export(
 
     dummy = torch.zeros(1, WINDOW_SAMPLES, dtype=torch.float32)
 
+    # dynamo=False uses the legacy TorchScript-based exporter. The dynamo-based
+    # exporter (default in torch >= 2.7) emits graphs whose Conv-with-Mul-scaled
+    # bias trips ORT's `quantize_dynamic`. Legacy export folds those patterns
+    # into initializers that the quantizer handles cleanly.
     torch.onnx.export(
         wrapper,
         (dummy,),
@@ -70,6 +74,7 @@ def export(
         do_constant_folding=True,
         dynamic_axes=None,  # fully static for mobile-friendly inference
         export_params=True,
+        dynamo=False,
     )
 
     metadata_path = out.with_suffix(".meta.txt")
