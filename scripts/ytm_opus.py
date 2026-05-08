@@ -433,6 +433,42 @@ def video_id_from_url(url: str) -> str | None:
     return match.group(1) if match else None
 
 
+_TITLE_NOISE_PATTERNS = [
+    # Annotation suffixes: ()/[] containing only metadata about how the upload
+    # is presented, not the audio content. "(Music Video)" = same audio as
+    # "(Audio)"; "(Extended)" / "(Slowed)" / "(Remix)" are NOT in this list
+    # because they ARE real audio variants we want to keep separate.
+    r"\(\s*(?:official\s+)?(?:music\s*video|mv|m/v|lyric\s*video|lyrics?|audio|visualizer|video)\s*\)",
+    r"\[\s*(?:official\s+)?(?:music\s*video|mv|m/v|lyric\s*video|lyrics?|audio|visualizer|video)\s*\]",
+    r"\(\s*hq\s*\)",
+    r"\(\s*hd\s*\)",
+    r"\[\s*hd\s*\]",
+    r"\[\s*(?:remaster(?:ed)?)\s*\d*\s*\]",
+    r"\(\s*remaster(?:ed)?\s*\)",
+    r"\s+-\s*topic\s*$",
+    r"\s*\|\s*[^|]*$",  # trailing " | Channel Name"
+]
+_TITLE_NOISE_RE = re.compile("|".join(_TITLE_NOISE_PATTERNS), flags=re.IGNORECASE)
+_TITLE_PUNCT_RE = re.compile(r"[^\w\s]+")
+
+
+def normalize_title(title: str) -> str:
+    """Collapse common YouTube title decoration so re-uploads of the same
+    song hash to the same key.
+
+    Drops "(Official Video)", "(Lyrics)", "[Remastered 2011]", " - Topic",
+    " | Some Channel" suffixes, plus all punctuation; collapses whitespace
+    and lowercases. Doesn't try to match across artists or remix variants.
+    """
+    if not title:
+        return ""
+    s = title.casefold().strip()
+    s = _TITLE_NOISE_RE.sub("", s)
+    s = _TITLE_PUNCT_RE.sub(" ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 def find_existing_by_id(out_dir: Path, video_id: str) -> Path | None:
     """Return the on-disk .opus file for ``video_id`` if it already exists."""
     if not out_dir.exists():
@@ -450,18 +486,20 @@ def expand_input(
     *,
     min_duration: float | None = None,
     max_duration: float | None = None,
-) -> list[str]:
-    """Expand a search query / playlist URL into individual video URLs.
+) -> list[tuple[str, str]]:
+    """Expand a search query / playlist URL into ``(url, title)`` tuples.
 
     - Plain video URL → returned as-is (its duration is checked later in
-      ``process_url`` once full metadata is fetched).
+      ``process_url`` once full metadata is fetched). Title is empty.
     - ``ytsearch...:query`` or bare query (no scheme) → top N search results.
     - Playlist URL (``list=...``) → all entries.
 
     When ``min_duration`` / ``max_duration`` are set and the flat-playlist
     response includes a ``duration`` per entry, out-of-range entries are
     dropped here so we never even open the page. Entries with missing
-    duration pass through and get re-checked in ``process_url``.
+    duration pass through and get re-checked in ``process_url``. The
+    returned ``title`` (when present) lets the caller dedupe across
+    re-uploads via ``normalize_title``.
     """
     raw = raw.strip()
     if not raw or raw.startswith("#"):
@@ -473,7 +511,7 @@ def expand_input(
     if is_url and "list=" in raw and "/watch?" not in raw:
         target = raw
     elif is_url:
-        return [raw]
+        return [(raw, "")]
     elif is_search:
         target = raw
     else:
@@ -489,7 +527,7 @@ def expand_input(
         print(f"warning: failed to expand {target!r}: {exc}", file=sys.stderr)
         return []
 
-    out: list[str] = []
+    out: list[tuple[str, str]] = []
     skipped_duration = 0
     for entry in data.get("entries") or []:
         vid = clean_value(entry.get("id"))
@@ -503,7 +541,8 @@ def expand_input(
             if max_duration is not None and duration > max_duration:
                 skipped_duration += 1
                 continue
-        out.append(f"https://www.youtube.com/watch?v={vid}")
+        title = clean_value(entry.get("title"))
+        out.append((f"https://www.youtube.com/watch?v={vid}", title))
     if skipped_duration:
         print(
             f"  filtered {skipped_duration} of {len(data.get('entries') or [])} "
@@ -820,6 +859,14 @@ def main() -> None:
         "files longer than --max-duration. Use to drop accidental DJ-mix / "
         "compilation downloads from earlier runs.",
     )
+    parser.add_argument(
+        "--allow-title-duplicates",
+        action="store_true",
+        help="Disable normalize-title-based dedup. Default: drop entries whose "
+        "stripped title (without (Official Video) / (Lyrics) / [Remastered] / "
+        "trailing channel name / punctuation) matches an already-resolved one. "
+        "Useful when you actually want multiple uploads of the same song.",
+    )
     args = parser.parse_args()
 
     require_tool("yt-dlp")
@@ -843,26 +890,35 @@ def main() -> None:
     min_d = args.min_duration if args.min_duration > 0 else None
     max_d = args.max_duration if args.max_duration > 0 else None
     seen_ids: set[str] = set()
+    seen_titles: set[str] = set()
+    title_dupes = 0
     urls: list[str] = []
     for raw in raw_inputs:
-        for resolved in expand_input(
+        for resolved_url, resolved_title in expand_input(
             raw,
             args.search_limit,
             min_duration=min_d,
             max_duration=max_d,
         ):
-            vid = video_id_from_url(resolved)
-            if vid is None:
+            vid = video_id_from_url(resolved_url)
+            if vid is None or vid in seen_ids:
                 continue
-            if vid in seen_ids:
+            norm = normalize_title(resolved_title) if not args.allow_title_duplicates else ""
+            if norm and norm in seen_titles:
+                title_dupes += 1
                 continue
             seen_ids.add(vid)
-            urls.append(resolved)
+            if norm:
+                seen_titles.add(norm)
+            urls.append(resolved_url)
             if args.max_tracks is not None and len(urls) >= args.max_tracks:
                 break
         if args.max_tracks is not None and len(urls) >= args.max_tracks:
             break
-    print(f"resolved to {len(urls)} unique video(s)")
+    print(
+        f"resolved to {len(urls)} unique video(s); "
+        f"deduped {title_dupes} title-duplicate re-upload(s)"
+    )
 
     counts = {"downloaded": 0, "skipped": 0, "failed": 0}
     for index, url in enumerate(urls, start=1):
