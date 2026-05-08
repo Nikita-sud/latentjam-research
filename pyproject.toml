@@ -43,6 +43,12 @@ dev = [
 recommend = [
   "faiss-cpu>=1.8",
 ]
+train = [
+  "laion-clap>=1.1.4,<2",
+  "librosa>=0.10,<1",
+  "torchvision>=0.21,<1",
+  "wandb>=0.16,<1",
+]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

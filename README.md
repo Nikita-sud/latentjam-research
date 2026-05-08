@@ -47,9 +47,41 @@ make eval STORE=models/store/fma.parquet DATASET=fma_small
 
 Random-baseline recall@10 on FMA-small's 8 balanced genres is `0.125`. The v0 quality gate is `>= 0.65`.
 
+## v0.5: CLAP-distilled student
+
+The shipping direction is a small CNN over 5-second log-mel windows, distilled
+from LAION-CLAP music embeddings. The teacher stays in this research repo; the
+student checkpoint/ONNX is the candidate on-device artifact.
+
+```bash
+make install-train
+make download-fma
+make download-clap-music
+
+# Cache LAION-CLAP music teacher embeddings for FMA-small.
+make distill-cache WINDOWS=1 BATCH=8 WANDB_PROJECT=latentjam-research
+
+# Train the 5-15M parameter mel-CNN student and log curves to W&B.
+make distill-train EPOCHS=5 BATCH=32 WANDB_PROJECT=latentjam-research
+
+# Compare student vs cached LAION-CLAP teacher on FMA test rows.
+make student-benchmark SPLIT=test WANDB_PROJECT=latentjam-research
+# Include teacher latency too when you have the CLAP checkpoint installed.
+make student-benchmark SPLIT=test TEACHER_LATENCY=1 WANDB_PROJECT=latentjam-research
+
+# Export the student CNN; Android must reproduce the same log-mel frontend.
+make student-export
+make student-quantize
+```
+
+The benchmark logs student-vs-teacher cosine, nearest-neighbor top-k overlap,
+FMA genre recall for both embeddings, parameter count, and local CPU latency.
+With `TEACHER_LATENCY=1`, it also times LAION-CLAP on the same 5-second clip.
+For quick wiring checks, add `LIMIT=...` or `LIMIT_TRAIN=... LIMIT_VAL=...`.
+
 ## Experiment tracking
 
-`run_eval`, `conversion.verify`, and `conversion.bench` can stream their JSON reports to Weights & Biases. wandb is opt-in: pass `--wandb-project latentjam-research` (and optionally `--wandb-tag ...`) on any of these CLIs. Without that flag, no wandb code runs and no network calls happen.
+`run_eval`, `conversion.verify`, `conversion.bench`, and the student CLIs can stream their JSON reports to Weights & Biases. wandb is opt-in: pass `--wandb-project latentjam-research` (and optionally `--wandb-tag ...`) on any of these CLIs. Without that flag, no wandb code runs and no network calls happen.
 
 ```bash
 wandb login                       # one-time

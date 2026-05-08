@@ -19,6 +19,9 @@ env/
 .vscode/
 .idea/
 
+# Claude Code worktrees (per-session checkouts under .claude/worktrees/*)
+.claude/
+
 # Local data and model artifacts
 /data/*
 !/data/.gitkeep
@@ -26,6 +29,7 @@ env/
 !/models/.gitkeep
 
 # Common experiment outputs
+wandb/
 *.pt
 *.pth
 *.ckpt
