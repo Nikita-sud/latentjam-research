@@ -1,149 +1,1851 @@
-# Search queries / playlist URLs for ytm_opus.py bulk collection.
+# Search queries for ytm_opus.py bulk collection.
 #
 # Each non-empty non-# line is either:
-#   - "<artist> <song>"           → top-N matches for that specific song
-#   - "<artist> <album>"          → tracks of that album
-#   - https://music.youtube.com/playlist?list=...   → all playlist entries
-#   - https://www.youtube.com/playlist?list=...     → same
+#   - "<artist> <song>"        → top 1 result for that specific track
+#   - "<artist> <album>"       → tracks of that album (use sparingly)
+#   - https://music.youtube.com/playlist?list=...   → playlist entries
 #
-# **Important**: queries like "best phonk 2024", "<genre> playlist", "<genre>
-# songs 2024" return *compilation videos* (30 min – 12 h) on YouTube search,
-# not individual tracks. The default --max-duration=900 will filter them out
-# but you'll end up with zero downloads. Use specific artist+track queries
-# OR paste real playlist URLs (which expand entry-by-entry).
-#
-# Recommended:
+# Guidance:
 #   ./scripts/ytm_opus.py --from-file scripts/yt_music_queries.txt \
-#     --search-limit 5 --max-tracks 5000
+#     --search-limit 1 --max-tracks 5000
+#
+# With --search-limit 1, each line resolves to ~1 unique track (sometimes
+# more after dedup if the top result is a re-upload). Expect ~85-95% of
+# lines to materialize as files; the rest get dropped by duration filter,
+# title dedup, or yt-dlp errors. ~1500 queries → ~1300-1400 tracks.
 
-# ===== Phonk =====
+# ============================================================
+# Hip-hop / Rap  (US, ~150 tracks; classic to modern)
+# ============================================================
+
+# Old school / golden era
+sugarhill gang rappers delight
+grandmaster flash the message
+run dmc walk this way
+public enemy fight the power
+nwa straight outta compton
+nwa fuck the police
+beastie boys sabotage
+beastie boys fight for your right
+2pac california love
+2pac hit em up
+2pac changes
+notorious big juicy
+notorious big hypnotize
+notorious big mo money mo problems
+nas if i ruled the world
+nas one mic
+nas it aint hard to tell
+nas ny state of mind
+mobb deep shook ones
+wu tang clan cream
+wu tang clan protect ya neck
+gza liquid swords
+ghostface killah ice cream
+method man bring the pain
+big l put it on
+dmx ruff ryders anthem
+jay z hard knock life
+jay z big pimpin
+jay z 99 problems
+big pun still not a player
+fugees ready or not
+fugees killing me softly
+lauryn hill doo wop that thing
+busta rhymes woo hah got you all in check
+missy elliott get ur freak on
+missy elliott work it
+outkast ms jackson
+outkast hey ya
+outkast bombs over baghdad
+outkast rosa parks
+
+# 2000s mainstream
+eminem stan
+eminem lose yourself
+eminem the real slim shady
+eminem without me
+eminem rap god
+eminem mockingbird
+50 cent in da club
+50 cent candy shop
+50 cent pimp
+ludacris move bitch
+ludacris yeah
+nelly hot in herre
+nelly dilemma
+chamillionaire ridin
+twista slow jamz
+ja rule always on time
+ja rule put it on me
+dmx party up
+dr dre still dre
+dr dre forgot about dre
+snoop dogg drop it like its hot
+snoop dogg gin and juice
+ice cube it was a good day
+ice cube you can do it
+warren g regulate
+coolio gangstas paradise
+puff daddy ill be missing you
+mase feel so good
+will smith gettin jiggy wit it
+common the light
+mos def umi says
+talib kweli get by
+black star definition
+jay z empire state of mind
+kanye west jesus walks
+kanye west stronger
+kanye west gold digger
+kanye west heartless
+kanye west all of the lights
+kanye west power
+kanye west runaway
+kid cudi day n nite
+kid cudi pursuit of happiness
+
+# 2010s
+drake started from the bottom
+drake hotline bling
+drake one dance
+drake gods plan
+drake in my feelings
+drake nice for what
+drake passionfruit
+j cole no role modelz
+j cole power trip
+j cole work out
+j cole wet dreamz
+kendrick lamar humble
+kendrick lamar dna
+kendrick lamar alright
+kendrick lamar money trees
+kendrick lamar swimming pools
+kendrick lamar king kunta
+kendrick lamar the heart part 5
+kendrick lamar not like us
+kendrick lamar euphoria
+kendrick lamar squabble up
+big sean i dont fuck with you
+asap rocky lord pretty flacko jodye 2
+asap rocky praise the lord
+asap rocky everyday
+asap ferg work
+travis scott goosebumps
+travis scott sicko mode
+travis scott antidote
+travis scott highest in the room
+travis scott fein
+schoolboy q man of the year
+schoolboy q collard greens
+chance the rapper no problem
+chance the rapper sunday candy
+mac miller nikes on my feet
+mac miller self care
+mac miller weekend
+mac miller dunno
+logic 1-800-273-8255
+logic everybody
+tyler the creator earfquake
+tyler the creator yonkers
+tyler the creator new magic wand
+tyler the creator see you again
+tyler the creator wusyaname
+denzel curry ultimate
+denzel curry walkin
+denzel curry clout cobain
+playboi carti magnolia
+playboi carti shoota
+playboi carti new tank
+21 savage bank account
+21 savage a lot
+21 savage redrum
+post malone congratulations
+post malone rockstar
+post malone circles
+post malone better now
+post malone sunflower
+juice wrld lucid dreams
+juice wrld all girls are the same
+juice wrld robbery
+xxxtentacion sad
+xxxtentacion changes
+xxxtentacion moonlight
+lil uzi vert xo tour llif3
+lil uzi vert just wanna rock
+lil uzi vert money longer
+nav mahalo
+gunna pushin p
+lil baby drip too hard
+lil baby for the real
+yeat lyfestyle
+yeat poppin
+metro boomin trance
+metro boomin creepin
+metro boomin superhero
+future mask off
+future low life
+future life is good
+future used to this
+nas ether
+ice spice munch
+doja cat say so
+doja cat woman
+doja cat kiss me more
+
+# Drill / UK / regional
+pop smoke welcome to the party
+pop smoke dior
+pop smoke for the night
+fivio foreign big drip
+chief keef love sosa
+chief keef faneto
+67 lets lurk
+unknown t homerton b
+central cee doja
+
+# ============================================================
+# Pop  (~100 tracks)
+# ============================================================
+
+# Diva / iconic
+michael jackson billie jean
+michael jackson thriller
+michael jackson smooth criminal
+michael jackson beat it
+michael jackson rock with you
+prince purple rain
+prince when doves cry
+prince kiss
+madonna like a prayer
+madonna material girl
+madonna vogue
+whitney houston i will always love you
+whitney houston i wanna dance with somebody
+mariah carey we belong together
+mariah carey fantasy
+celine dion my heart will go on
+britney spears toxic
+britney spears baby one more time
+britney spears oops i did it again
+christina aguilera beautiful
+christina aguilera genie in a bottle
+gwen stefani hollaback girl
+beyonce halo
+beyonce single ladies
+beyonce crazy in love
+beyonce drunk in love
+beyonce formation
+beyonce texas hold em
+rihanna umbrella
+rihanna we found love
+rihanna diamonds
+rihanna only girl
+rihanna stay
+adele hello
+adele rolling in the deep
+adele someone like you
+adele easy on me
+lady gaga bad romance
+lady gaga poker face
+lady gaga rain on me
+lady gaga shallow
+katy perry firework
+katy perry roar
+katy perry teenage dream
+katy perry dark horse
+taylor swift shake it off
+taylor swift blank space
+taylor swift cruel summer
+taylor swift anti hero
+taylor swift bad blood
+taylor swift willow
+ariana grande thank u next
+ariana grande 7 rings
+ariana grande into you
+ariana grande we cant be friends
+selena gomez lose you to love me
+demi lovato heart attack
+miley cyrus flowers
+miley cyrus party in the usa
+miley cyrus wrecking ball
+dua lipa levitating
+dua lipa new rules
+dua lipa physical
+dua lipa houdini
+billie eilish bad guy
+billie eilish ocean eyes
+billie eilish lovely
+billie eilish happier than ever
+billie eilish birds of a feather
+olivia rodrigo good 4 u
+olivia rodrigo drivers license
+olivia rodrigo vampire
+sabrina carpenter espresso
+sabrina carpenter please please please
+chappell roan good luck babe
+chappell roan pink pony club
+charli xcx 360
+charli xcx von dutch
+sza kill bill
+sza good days
+sza saturn
+benson boone beautiful things
+the weeknd blinding lights
+the weeknd save your tears
+the weeknd starboy
+the weeknd cant feel my face
+the weeknd in your eyes
+the weeknd creepin
+ed sheeran shape of you
+ed sheeran perfect
+ed sheeran thinking out loud
+ed sheeran bad habits
+shawn mendes stitches
+shawn mendes treat you better
+harry styles watermelon sugar
+harry styles as it was
+harry styles sign of the times
+justin bieber sorry
+justin bieber peaches
+justin bieber love yourself
+bruno mars uptown funk
+bruno mars 24k magic
+bruno mars locked out of heaven
+bruno mars when i was your man
+bruno mars die with a smile
+the chainsmokers closer
+the chainsmokers something just like this
+maroon 5 sugar
+maroon 5 girls like you
+maroon 5 memories
+imagine dragons believer
+imagine dragons thunder
+imagine dragons radioactive
+onerepublic counting stars
+sam smith stay with me
+sam smith unholy
+james arthur say you wont let go
+
+# ============================================================
+# Rock  (~150 tracks; classic / hard / alt / modern)
+# ============================================================
+
+# 60s-70s classic rock
+the beatles hey jude
+the beatles let it be
+the beatles come together
+the beatles here comes the sun
+the beatles a day in the life
+the beatles strawberry fields forever
+the beatles while my guitar gently weeps
+the rolling stones paint it black
+the rolling stones gimme shelter
+the rolling stones sympathy for the devil
+the rolling stones angie
+the rolling stones satisfaction
+led zeppelin stairway to heaven
+led zeppelin kashmir
+led zeppelin black dog
+led zeppelin whole lotta love
+led zeppelin immigrant song
+pink floyd comfortably numb
+pink floyd wish you were here
+pink floyd money
+pink floyd time
+pink floyd another brick in the wall
+pink floyd hey you
+pink floyd shine on you crazy diamond
+the doors light my fire
+the doors riders on the storm
+the doors break on through
+jimi hendrix all along the watchtower
+jimi hendrix purple haze
+jimi hendrix voodoo child
+the who baba oreilly
+the who behind blue eyes
+the who wont get fooled again
+deep purple smoke on the water
+deep purple highway star
+deep purple child in time
+black sabbath paranoid
+black sabbath iron man
+black sabbath war pigs
+queen bohemian rhapsody
+queen we will rock you
+queen we are the champions
+queen dont stop me now
+queen another one bites the dust
+queen radio ga ga
+queen under pressure
+fleetwood mac dreams
+fleetwood mac the chain
+fleetwood mac go your own way
+the eagles hotel california
+the eagles take it easy
+david bowie heroes
+david bowie space oddity
+david bowie life on mars
+david bowie under pressure
+david bowie lets dance
+ac dc back in black
+ac dc highway to hell
+ac dc thunderstruck
+ac dc you shook me all night long
+aerosmith dream on
+aerosmith walk this way
+aerosmith i dont want to miss a thing
+journey dont stop believin
+journey faithfully
+journey separate ways
+boston more than a feeling
+kansas carry on wayward son
+foreigner i want to know what love is
+toto africa
+toto rosanna
+dire straits sultans of swing
+dire straits money for nothing
+dire straits brothers in arms
+
+# 80s / 90s
+guns n roses sweet child o mine
+guns n roses welcome to the jungle
+guns n roses november rain
+guns n roses paradise city
+metallica enter sandman
+metallica master of puppets
+metallica nothing else matters
+metallica one
+metallica fade to black
+metallica the unforgiven
+nirvana smells like teen spirit
+nirvana come as you are
+nirvana lithium
+nirvana heart shaped box
+nirvana in bloom
+pearl jam alive
+pearl jam jeremy
+pearl jam black
+pearl jam even flow
+soundgarden black hole sun
+soundgarden spoonman
+alice in chains man in the box
+alice in chains rooster
+stone temple pilots plush
+stone temple pilots interstate love song
+red hot chili peppers under the bridge
+red hot chili peppers californication
+red hot chili peppers scar tissue
+red hot chili peppers otherside
+red hot chili peppers cant stop
+red hot chili peppers dani california
+red hot chili peppers snow hey oh
+oasis wonderwall
+oasis dont look back in anger
+oasis champagne supernova
+blur song 2
+blur tender
+radiohead creep
+radiohead karma police
+radiohead no surprises
+radiohead paranoid android
+radiohead idioteque
+radiohead street spirit
+the cure friday im in love
+the cure just like heaven
+the cure boys dont cry
+new order blue monday
+joy division love will tear us apart
+the smiths there is a light that never goes out
+the smiths how soon is now
+depeche mode personal jesus
+depeche mode enjoy the silence
+the offspring self esteem
+the offspring come out and play
+green day basket case
+green day good riddance
+green day american idiot
+green day boulevard of broken dreams
+blink 182 all the small things
+blink 182 i miss you
+blink 182 first date
+sum 41 in too deep
+sum 41 fat lip
+
+# Modern alt / indie rock
+foo fighters everlong
+foo fighters the pretender
+foo fighters my hero
+foo fighters learn to fly
+foo fighters times like these
+linkin park in the end
+linkin park numb
+linkin park crawling
+linkin park one step closer
+linkin park bleed it out
+linkin park leave out all the rest
+system of a down chop suey
+system of a down toxicity
+system of a down byob
+system of a down aerials
+muse hysteria
+muse supermassive black hole
+muse uprising
+muse plug in baby
+muse time is running out
+the white stripes seven nation army
+the white stripes fell in love with a girl
+the strokes last nite
+the strokes reptilia
+the strokes someday
+arctic monkeys do i wanna know
+arctic monkeys 505
+arctic monkeys r u mine
+arctic monkeys why do you only call me when youre high
+arctic monkeys mardy bum
+the killers mr brightside
+the killers somebody told me
+the killers when you were young
+the killers human
+kings of leon sex on fire
+kings of leon use somebody
+mgmt kids
+mgmt electric feel
+mgmt time to pretend
+foster the people pumped up kicks
+the black keys lonely boy
+the black keys little black submarines
+queens of the stone age no one knows
+queens of the stone age go with the flow
+my chemical romance helena
+my chemical romance welcome to the black parade
+my chemical romance teenagers
+fall out boy thnks fr th mmrs
+fall out boy sugar were goin down
+fall out boy centuries
+panic at the disco i write sins not tragedies
+panic at the disco high hopes
+twenty one pilots stressed out
+twenty one pilots heathens
+twenty one pilots ride
+imagine dragons demons
+
+# ============================================================
+# Indie / Alternative  (~80 tracks)
+# ============================================================
+
+tame impala the less i know the better
+tame impala feels like we only go backwards
+tame impala new person same old mistakes
+tame impala lost in yesterday
+tame impala borderline
+mac demarco chamber of reflection
+mac demarco salad days
+mac demarco freaking out the neighborhood
+glass animals heat waves
+glass animals gooey
+glass animals the other side of paradise
+arctic monkeys snap out of it
+arctic monkeys i bet you look good on the dancefloor
+the strokes the modern age
+beach house space song
+beach house myth
+mitski nobody
+mitski washing machine heart
+mitski first love late spring
+phoebe bridgers motion sickness
+phoebe bridgers kyoto
+phoebe bridgers scott street
+soccer mommy circle the drain
+boygenius not strong enough
+clairo bags
+clairo pretty girl
+clairo amoeba
+faye webster kingston
+japanese house lilo
+arcade fire wake up
+arcade fire rebellion lies
+arcade fire reflektor
+arcade fire neighborhood 1
+fleet foxes white winter hymnal
+fleet foxes mykonos
+bon iver skinny love
+bon iver holocene
+bon iver re stacks
+sufjan stevens chicago
+sufjan stevens visions of gideon
+the national bloodbuzz ohio
+the national fake empire
+the national mistaken for strangers
+vampire weekend a punk
+vampire weekend cape cod kwassa
+vampire weekend harmony hall
+animal collective my girls
+of monsters and men little talks
+of monsters and men dirty paws
+the lumineers ho hey
+the lumineers ophelia
+mumford and sons little lion man
+mumford and sons i will wait
+edward sharpe home
+hozier take me to church
+hozier work song
+hozier too sweet
+florence the machine dog days are over
+florence the machine shake it out
+florence the machine ship to wreck
+florence the machine my love
+mac miller good news
+mac miller self care
+big thief not
+big thief paul
+big thief masterpiece
+slowdive sugar for the pill
+slowdive star roving
+beach fossils sleep apnea
+mild high club homage
+neutral milk hotel in the aeroplane over the sea
+sufjan stevens death with dignity
+courtney barnett pedestrian at best
+the national don't swallow the cap
+
+# ============================================================
+# R&B / Soul / Neo-soul  (~80 tracks)
+# ============================================================
+
+# Classics
+marvin gaye lets get it on
+marvin gaye whats going on
+marvin gaye sexual healing
+marvin gaye i heard it through the grapevine
+stevie wonder superstition
+stevie wonder isnt she lovely
+stevie wonder higher ground
+stevie wonder living for the city
+stevie wonder sir duke
+otis redding sittin on the dock of the bay
+otis redding try a little tenderness
+sam cooke a change is gonna come
+aretha franklin respect
+aretha franklin chain of fools
+aretha franklin natural woman
+al green lets stay together
+al green tired of being alone
+james brown get up
+james brown i feel good
+james brown its a mans world
+gladys knight midnight train to georgia
+ray charles georgia on my mind
+ray charles hit the road jack
+
+# Modern
+frank ocean pyramids
+frank ocean thinkin bout you
+frank ocean nights
+frank ocean ivy
+frank ocean self control
+frank ocean white ferrari
+frank ocean lost
+frank ocean pink white
+frank ocean chanel
+the weeknd often
+the weeknd house of balloons
+the weeknd wicked games
+the weeknd earned it
+the weeknd the hills
+the weeknd die for you
+solange cranes in the sky
+solange dont touch my hair
+solange losing you
+sza kill bill
+sza good days
+sza low
+sza nobody gets me
+sza snooze
+sza all the stars
+daniel caesar best part
+daniel caesar get you
+brent faiyaz dead man walking
+brent faiyaz wasting time
+brent faiyaz all mine
+giveon heartbreak anniversary
+giveon like i want you
+summer walker girls need love
+summer walker playing games
+jhene aiko bed peace
+jhene aiko pretty bird
+miguel adorn
+miguel sure thing
+john legend all of me
+john legend ordinary people
+john legend stay with you
+alicia keys no one
+alicia keys fallin
+alicia keys if i aint got you
+amy winehouse rehab
+amy winehouse back to black
+amy winehouse valerie
+amy winehouse you know im no good
+erykah badu on and on
+erykah badu didnt cha know
+erykah badu tyrone
+lauryn hill ex factor
+lauryn hill the miseducation of lauryn hill
+dangelo brown sugar
+dangelo untitled how does it feel
+dangelo really love
+maxwell pretty wings
+musiq soulchild halfcrazy
+floetry say yes
+khalid talk
+khalid better
+khalid location
+ari lennox new apartment
+sade smooth operator
+sade no ordinary love
+sade by your side
+the weeknd often
+silk sonic leave the door open
+silk sonic smokin out the window
+
+# ============================================================
+# Electronic / EDM / Dance  (~120 tracks; many subgenres)
+# ============================================================
+
+# House / classic dance
+daft punk one more time
+daft punk get lucky
+daft punk harder better faster stronger
+daft punk around the world
+daft punk something about us
+daft punk veridis quo
+daft punk instant crush
+fred again delilah
+fred again marea
+fred again rumble
+fred again kyle
+disclosure latch
+disclosure you me
+disclosure white noise
+duke dumont need u 100 percent
+dj snake turn down for what
+calvin harris feel so close
+calvin harris summer
+calvin harris my way
+calvin harris how deep is your love
+mark ronson uptown funk
+swedish house mafia don't you worry child
+swedish house mafia save the world
+avicii wake me up
+avicii hey brother
+avicii levels
+avicii waiting for love
+avicii the nights
+avicii without you
+avicii sos
+zedd clarity
+zedd stay
+zedd the middle
+chainsmokers closer
+chainsmokers paris
+chainsmokers something just like this
+flume never be like you
+flume holdin on
+flume say it
+flume helix
+porter robinson shelter
+porter robinson sad machine
+porter robinson nurture
+porter robinson goodbye to a world
+madeon pay no mind
+madeon all my friends
+madeon home
+odesza say my name
+odesza a moment apart
+odesza late night
+sbtrkt new dorp
+bicep glue
+bicep apricots
+bonobo cirrus
+bonobo kerala
+bonobo black sands
+
+# Techno / minimal / IDM
+deadmau5 strobe
+deadmau5 ghosts n stuff
+deadmau5 raise your weapon
+deadmau5 some chords
+boys noize ich rave
+gesaffelstein pursuit
+boards of canada roygbiv
+boards of canada dayvan cowboy
+boards of canada music has the right to children
+aphex twin xtal
+aphex twin avril 14th
+aphex twin windowlicker
+aphex twin to cure a weakling child
+caribou can't do without you
+caribou odessa
+four tet two thousand and seventeen
+four tet baby
+four tet only human
+nicolas jaar mi mujer
+moderat a new error
+moderat bad kingdom
+ben klock subzero
+charlotte de witte formula
+
+# Trance / progressive
+above and beyond sun and moon
+above and beyond on a good day
+armin van buuren in and out of love
+armin van buuren this is what it feels like
+tiesto adagio for strings
+tiesto traffic
+darude sandstorm
+paul van dyk for an angel
+above and beyond thing called love
+
+# Drum and bass / dnb
+pendulum tarantula
+pendulum the island
+pendulum watercolour
+pendulum witchcraft
+sub focus solar system
+chase and status no problem
+chase and status time
+high contrast if we ever
+camo and krooked stranger
+sigma nobody to love
+
+# Dubstep / future bass / trap
+skrillex bangarang
+skrillex scary monsters and nice sprites
+skrillex make it bun dem
+skrillex first of the year
+nero promises
+nero crush on you
+flux pavilion i cant stop
+flume holdin on
+illenium good things fall apart
+seven lions strangers
+flosstradamus mosh pit
+diplo lean on
+diplo revolution
+rl grime core
+
+# Synthwave / vaporwave
+the midnight sunset
+the midnight days of thunder
+fm 84 outatime
+fm 84 running in the night
+gunship tech noir
+gunship dark all day
+mitch murder interceptor
+power glove pump
+home resonance
+home decay
+saint pepsi enjoy yourself
+macintosh plus リサフランク420 現代のコンピュー
+
+# House contemporary
+black coffee superman
+black coffee pieces of me
+keinemusik move
+afro house pieces of me
+diplo on my mind
+
+# ============================================================
+# Phonk / Drift  (~30 tracks)
+# ============================================================
+
 kordhell murder in my mind
 kordhell decay
+kordhell killing my sound
+kordhell whip slap
 phonky tony killshot
 playaphonk i can do it all
+playaphonk crazy
 mc gw montagem mahoraga
 mc gw rave
+mc gw montagem coral
+mc gw bandido
 kasimov phonky town
 dxrk darkside
 neoni binary
 hensonn sahara
+dvrst close eyes
+dvrst dark phonk
+ghostface playa fed up
+ghostface playa loyalty
+freddie dredd cha cha
+freddie dredd opaul
+freddie dredd dark thoughts
+moondeity insvne
+moondeity jealousy
+mvrcio mr funkys cassette
+shadxw blacked out
+g3ox em metamorphosis
+slowed reverb stop time
+phonk dripz hardlines
+sxmpra cowbell warrior
+nikadubaa phonky beat
 
-# ===== Hip-hop / Rap =====
-metro boomin trance
-metro boomin creepin
-travis scott sicko mode
-travis scott fein
-kendrick lamar humble
-kendrick lamar not like us
-drake one dance
-drake started from the bottom
-21 savage a lot
-yeat lyfestyle
-playboi carti magnolia
-future mask off
-post malone rockstar
-post malone circles
-nas one mic
-the notorious big juicy
+# ============================================================
+# Metal / Hardcore  (~80 tracks)
+# ============================================================
 
-# ===== Pop =====
-billie eilish bad guy
-billie eilish ocean eyes
-the weeknd blinding lights
-the weeknd save your tears
-dua lipa levitating
-taylor swift cruel summer
-sabrina carpenter espresso
-ariana grande 7 rings
-olivia rodrigo good 4 u
-
-# ===== Rock =====
-arctic monkeys do i wanna know
-arctic monkeys 505
-tame impala the less i know the better
-tame impala feels like we only go backwards
-radiohead creep
-radiohead karma police
-nirvana smells like teen spirit
-foo fighters everlong
-queen bohemian rhapsody
-red hot chili peppers under the bridge
-linkin park in the end
-muse hysteria
-
-# ===== Electronic / EDM =====
-daft punk one more time
-daft punk get lucky
-deadmau5 strobe
-calvin harris feel so close
-flume never be like you
-porter robinson shelter
-disclosure latch
-fred again delilah
-boards of canada roygbiv
-
-# ===== Indie / Alt =====
-arcade fire wake up
-fleet foxes white winter hymnal
-bon iver skinny love
-phoebe bridgers motion sickness
-mitski nobody
-glass animals heat waves
-the strokes last nite
-
-# ===== Metal =====
+# Classic / heavy
+black sabbath n.i.b.
+iron maiden the trooper
+iron maiden run to the hills
+iron maiden hallowed be thy name
+iron maiden fear of the dark
+iron maiden number of the beast
+judas priest painkiller
+judas priest breaking the law
+motorhead ace of spades
+motorhead overkill
+megadeth tornado of souls
+megadeth holy wars
+megadeth symphony of destruction
+megadeth peace sells
+metallica enter sandman
 metallica master of puppets
-system of a down chop suey
+metallica nothing else matters
+metallica fade to black
+metallica one
+metallica seek and destroy
+metallica creeping death
+slayer raining blood
+slayer angel of death
+slayer south of heaven
+anthrax madhouse
+pantera walk
+pantera cowboys from hell
+pantera 5 minutes alone
+sepultura roots bloody roots
+sepultura arise
+
+# Modern / nu / metalcore
 slipknot duality
-gojira stranded
+slipknot psychosocial
+slipknot before i forget
+slipknot wait and bleed
+slipknot the devil in i
+korn freak on a leash
+korn falling away from me
+korn blind
+disturbed down with the sickness
+disturbed the sound of silence
+disturbed indestructible
+system of a down chop suey
+system of a down toxicity
+system of a down byob
+system of a down aerials
+limp bizkit break stuff
+limp bizkit rollin
+papa roach last resort
+sevendust angels son
 deftones change
+deftones digital bath
+deftones my own summer
+deftones knife prty
 tool schism
+tool sober
+tool lateralus
+tool forty six and 2
+mastodon blood and thunder
+mastodon march of the fire ants
+trivium pull harder on the strings of your martyr
+trivium in waves
+killswitch engage my curse
+killswitch engage the end of heartache
+bring me the horizon throne
+bring me the horizon mantra
+bring me the horizon shadow moses
+parkway drive vice grip
+parkway drive carrion
+august burns red composure
+architects animals
+architects doomsday
+architects when we were young
+loathe new faces in the dark
+loathe two cycles of resignation
 
-# ===== R&B / Soul =====
-frank ocean pyramids
-sza kill bill
-the weeknd often
-solange cranes in the sky
-daniel caesar best part
-brent faiyaz dead man walking
+# Death / black / extreme
+death pull the plug
+death symbolic
+cannibal corpse hammer smashed face
+cannibal corpse evisceration plague
+gojira stranded
+gojira flying whales
+gojira amazonia
+mastodon hearts alive
+mastodon oblivion
+opeth ghost of perdition
+opeth deliverance
+opeth blackwater park
+amon amarth twilight of the thunder god
+amon amarth raise your horns
+behemoth ov fire and the void
+behemoth chant for ezkaton
+in flames cloud connected
+in flames only for the weak
+dimmu borgir progenies of the great apocalypse
+dimmu borgir mourning palace
+emperor i am the black wizards
+mayhem freezing moon
+rotting christ ela ela
+sleep dragonaut
+sleep holy mountain
+electric wizard funeralopolis
+ghost square hammer
+ghost rats
+ghost call me little sunshine
 
-# ===== Russian / CIS =====
+# ============================================================
+# Country  (~30 tracks)
+# ============================================================
+
+johnny cash hurt
+johnny cash ring of fire
+johnny cash man in black
+johnny cash folsom prison blues
+hank williams im so lonesome i could cry
+willie nelson on the road again
+willie nelson always on my mind
+dolly parton jolene
+dolly parton 9 to 5
+dolly parton i will always love you
+patsy cline crazy
+kenny rogers the gambler
+garth brooks friends in low places
+shania twain youre still the one
+shania twain man i feel like a woman
+taylor swift tim mcgraw
+keith urban blue aint your color
+luke bryan country girl
+florida georgia line cruise
+sam hunt body like a back road
+zac brown band chicken fried
+tim mcgraw humble and kind
+chris stapleton tennessee whiskey
+chris stapleton broken halos
+zach bryan something in the orange
+zach bryan i remember everything
+morgan wallen last night
+morgan wallen wasted on you
+luke combs forever after all
+luke combs beautiful crazy
+kacey musgraves space cowboy
+kacey musgraves rainbow
+
+# ============================================================
+# Jazz / Blues  (~50 tracks)
+# ============================================================
+
+# Jazz classics
+miles davis so what
+miles davis all blues
+miles davis kind of blue
+miles davis blue in green
+john coltrane giant steps
+john coltrane my favorite things
+john coltrane naima
+john coltrane a love supreme
+charlie parker ornithology
+charlie parker confirmation
+dizzy gillespie a night in tunisia
+thelonious monk round midnight
+thelonious monk straight no chaser
+duke ellington take the a train
+ella fitzgerald summertime
+ella fitzgerald dream a little dream
+billie holiday strange fruit
+billie holiday god bless the child
+nina simone feeling good
+nina simone i put a spell on you
+chet baker my funny valentine
+chet baker but not for me
+bill evans peace piece
+bill evans waltz for debby
+herbie hancock cantaloupe island
+herbie hancock chameleon
+herbie hancock watermelon man
+sonny rollins st thomas
+dave brubeck take five
+dave brubeck blue rondo a la turk
+art blakey moanin
+horace silver senor blues
+weather report birdland
+return to forever romantic warrior
+keith jarrett the koln concert
+robert glasper afro blue
+kamasi washington fists of fury
+gregory porter liquid spirit
+norah jones come away with me
+
+# Blues
+b b king the thrill is gone
+b b king lucille
+muddy waters mannish boy
+muddy waters hoochie coochie man
+robert johnson cross road blues
+howlin wolf smokestack lightning
+john lee hooker boom boom
+bb king rock me baby
+stevie ray vaughan texas flood
+stevie ray vaughan pride and joy
+eric clapton layla
+eric clapton tears in heaven
+
+# ============================================================
+# Classical / Orchestral  (~40 tracks)
+# ============================================================
+
+debussy clair de lune
+debussy arabesque no 1
+chopin nocturne op 9 no 2
+chopin nocturne op 27 no 2
+chopin prelude in d flat major raindrop
+chopin ballade no 1
+chopin polonaise heroique
+beethoven moonlight sonata
+beethoven fur elise
+beethoven symphony no 5
+beethoven symphony no 9 ode to joy
+mozart symphony no 40
+mozart eine kleine nachtmusik
+mozart requiem lacrimosa
+mozart turkish march
+bach toccata and fugue in d minor
+bach air on the g string
+bach prelude in c major
+bach cello suite no 1 prelude
+vivaldi the four seasons spring
+vivaldi the four seasons winter
+vivaldi summer storm
+brahms hungarian dance no 5
+brahms lullaby
+tchaikovsky swan lake
+tchaikovsky 1812 overture
+tchaikovsky nutcracker dance of the sugar plum fairy
+rachmaninoff prelude in c sharp minor
+rachmaninoff piano concerto no 2
+rachmaninoff vocalise
+ravel bolero
+ravel pavane pour une infante defunte
+satie gymnopedie no 1
+satie gnossienne no 1
+gershwin rhapsody in blue
+holst the planets jupiter
+holst mars the bringer of war
+puccini nessun dorma
+verdi la donna e mobile
+schubert ave maria
+schubert serenade
+liszt liebestraum no 3
+liszt hungarian rhapsody no 2
+grieg in the hall of the mountain king
+grieg morning mood
+prokofiev dance of the knights
+mussorgsky night on bald mountain
+mahler symphony no 5 adagietto
+
+# ============================================================
+# Folk / Acoustic / Singer-songwriter  (~40 tracks)
+# ============================================================
+
+bob dylan blowin in the wind
+bob dylan like a rolling stone
+bob dylan the times they are a changin
+bob dylan knockin on heavens door
+simon and garfunkel the sound of silence
+simon and garfunkel mrs robinson
+simon and garfunkel bridge over troubled water
+simon and garfunkel scarborough fair
+neil young heart of gold
+neil young old man
+neil young harvest moon
+joni mitchell big yellow taxi
+joni mitchell a case of you
+joni mitchell river
+james taylor fire and rain
+james taylor youve got a friend
+cat stevens wild world
+cat stevens father and son
+cat stevens peace train
+nick drake pink moon
+nick drake river man
+leonard cohen hallelujah
+leonard cohen suzanne
+leonard cohen dance me to the end of love
+joan baez diamonds and rust
+joni mitchell both sides now
+townes van zandt pancho and lefty
+john denver country roads
+john denver leaving on a jet plane
+the lumineers ho hey
+the lumineers cleopatra
+mumford and sons i will wait
+mumford and sons little lion man
+mumford and sons the cave
+fleet foxes white winter hymnal
+fleet foxes helplessness blues
+iron and wine such great heights
+sufjan stevens chicago
+elliott smith between the bars
+elliott smith say yes
+
+# ============================================================
+# Reggae / Ska / Dancehall  (~30 tracks)
+# ============================================================
+
+bob marley no woman no cry
+bob marley three little birds
+bob marley redemption song
+bob marley one love
+bob marley i shot the sheriff
+bob marley jamming
+bob marley could you be loved
+peter tosh legalize it
+peter tosh equal rights
+toots and the maytals pressure drop
+toots and the maytals 54 46 thats my number
+jimmy cliff the harder they come
+jimmy cliff many rivers to cross
+desmond dekker israelites
+ub40 red red wine
+ub40 cant help falling in love
+shaggy boombastic
+shaggy it wasnt me
+sean paul temperature
+sean paul get busy
+sean paul we be burnin
+shaggy angel
+inner circle bad boys
+the specials ghost town
+the specials a message to you rudy
+madness our house
+madness one step beyond
+damian marley welcome to jamrock
+buju banton untold stories
+chronixx skankin sweet
+
+# ============================================================
+# Latin / Reggaeton / Bachata  (~50 tracks)
+# ============================================================
+
+bad bunny tití me preguntó
+bad bunny me porto bonito
+bad bunny dakiti
+bad bunny moscow mule
+bad bunny yo perreo sola
+bad bunny callaita
+bad bunny safaera
+bad bunny monaco
+karol g provenza
+karol g bichota
+karol g tusa
+karol g mientras me curo del cora
+karol g si antes te hubiera conocido
+shakira la la la
+shakira hips dont lie
+shakira waka waka
+shakira ojos asi
+shakira bzrp music sessions vol 53
+rosalia despechá
+rosalia malamente
+rosalia con altura
+rosalia bizcochito
+j balvin mi gente
+j balvin ginza
+j balvin in da getto
+maluma felices los 4
+maluma hawai
+ozuna te bote
+ozuna baila baila baila
+daddy yankee gasolina
+daddy yankee con calma
+daddy yankee dura
+luis fonsi despacito
+luis fonsi echame la culpa
+nicky jam el perdon
+nicky jam x equis
+manuel turizo la bachata
+peso pluma ella baila sola
+peso pluma lady gaga
+fuerza regida bebe dame
+fuerza regida tqm
+romeo santos propuesta indecente
+prince royce darte un beso
+juan gabriel querida
+selena bidi bidi bom bom
+celia cruz la vida es un carnaval
+gloria estefan conga
+santana smooth
+santana black magic woman
+buena vista social club chan chan
+
+# ============================================================
+# K-pop / J-pop  (~50 tracks)
+# ============================================================
+
+bts dynamite
+bts butter
+bts boy with luv
+bts dna
+bts blood sweat tears
+bts fake love
+blackpink ddu du ddu du
+blackpink kill this love
+blackpink how you like that
+blackpink lovesick girls
+blackpink shut down
+twice fancy
+twice tt
+twice feel special
+twice cheer up
+red velvet psycho
+red velvet bad boy
+red velvet feel my rhythm
+mamamoo hip
+mamamoo gogobebe
+ive love dive
+ive eleven
+ive after like
+ive baddie
+newjeans super shy
+newjeans hype boy
+newjeans omg
+newjeans ditto
+newjeans how sweet
+le sserafim antifragile
+le sserafim unforgiven
+le sserafim easy
+aespa next level
+aespa savage
+aespa supernova
+itzy wannabe
+itzy dalla dalla
+g idle tomboy
+g idle queencard
+nmixx oo lala
+exo love shot
+exo growl
+nct dream we go up
+nct 127 cherry bomb
+seventeen god of music
+stray kids god's menu
+stray kids back door
+king gnu specialz
+king gnu hakujitsu
+yoasobi idol
+yoasobi yoru ni kakeru
+yoasobi gunjou
+ado usseewa
+ado new genesis
+fujii kaze shinunoga e wa
+official hige dandism pretender
+mrs green apple lilac
+
+# ============================================================
+# Russian / CIS  (~80 tracks)
+# ============================================================
+
+# Rock / classics
 кино группа крови
 кино перемен
+кино звезда по имени солнце
+кино пачка сигарет
+кино кукушка
+кино последний герой
+кино печаль
+машина времени поворот
+машина времени за тех кто в море
+аквариум город золотой
+аквариум поезд в огне
+ддт что такое осень
+ддт это все
+наутилус помпилиус я хочу быть с тобой
+наутилус помпилиус скованные одной цепью
 гражданская оборона все идет по плану
+гражданская оборона про дурачка
+гражданская оборона зоопарк
 аукцыон зимы не будет
+аукцыон деньги это бумага
 король и шут камнем по голове
+король и шут лесник
+король и шут прыгну со скалы
+ленинград www
+ленинград экспонат
+ленинград в питере пить
+ленинград кольщик
 мумий тролль владивосток 2000
+мумий тролль медведица
+мумий тролль невеста
+сплин выхода нет
+сплин романс
+сплин мое сердце
+би 2 мой рок-н-ролл
+би 2 нечего терять
+би 2 полковнику никто не пишет
+звери районы кварталы
+звери все что касается
+агата кристи как на войне
+агата кристи опиум для никого
+бутусов скованные одной цепью
+nautilus я хочу быть с тобой
+
+# Soviet / Bard / Estrada
+владимир высоцкий песня о друге
+владимир высоцкий охота на волков
+владимир высоцкий парус
+булат окуджава пожелание друзьям
+булат окуджава молитва
+анна герман эхо любви
+муслим магомаев свадьба
+эдуард хиль трололо
+лев лещенко день победы
+алла пугачева миллион алых роз
+алла пугачева арлекино
+алла пугачева позови меня с собой
+филипп киркоров зайка моя
+валерий меладзе сэра
+вячеслав добрынин не сыпь мне соль на рану
+дискотека авария если хочешь остаться
+
+# Modern pop / rap
 oxxxymiron биполярочка
+oxxxymiron последний звонок
+oxxxymiron где нас нет
+oxxxymiron versus markul
 скриптонит вечеринка
+скриптонит свзкз
+скриптонит positive
+скриптонит притон
 miyagi эндшпиль ты пари
+miyagi эндшпиль i got love
+miyagi эндшпиль atlant
+moneyken ловлю кайф
+басота 30
+басота нави
+фараон я
+фараон 5 минут назад
+big baby tape gimme the loot
+big baby tape vacation in italy
+moneyken big baby tape
+mayot deja vu
+elle mlk
+платина wammu
+allj дисциплина
+allj rolex
+nervo бит без баса
+аигел татарин
+аигел свобода
+лесные братья на колесах
+полина гагарина кукушка
+zivert credo
+zivert beverly hills
+полина гагарина обезоружена
+zemfira хочешь
+zemfira искала
+zemfira прости меня моя любовь
+nyusha выше
+анна асти повело по венам
+ёлка прованс
+дима билан невозможное возможно
 
-# ===== Latin / Reggaeton =====
-bad bunny me porto bonito
-karol g provenza
-rosalia despechá
-shakira bzrp music sessions
+# ============================================================
+# French / German / European  (~40 tracks)
+# ============================================================
 
-# ===== K-pop / J-pop =====
-newjeans super shy
-ive love dive
-yoasobi idol
-king gnu specialz
+stromae alors on danse
+stromae papaoutai
+stromae formidable
+stromae lhomme a tout faire
+edith piaf la vie en rose
+edith piaf non je ne regrette rien
+charles aznavour la boheme
+serge gainsbourg je taime moi non plus
+daft punk la robe
+phoenix 1901
+phoenix lisztomania
+mc solaar caroline
+indila dernière danse
+indila tourner dans le vide
+zaz je veux
+zaz on ira
+christine and the queens christine
+maitre gims est ce que tu maimes
+gims bella
+black m sur ma route
+nekfeu reuf
+nekfeu jeune et con
+booba jimmy
+booba scarface
+soprano cosmo
+soprano roule
+rammstein du hast
+rammstein sonne
+rammstein deutschland
+rammstein engel
+rammstein amerika
+nena 99 luftballons
+kraftwerk autobahn
+kraftwerk the model
+modern talking youre my heart youre my soul
+scooter hyper hyper
+boney m daddy cool
+boney m rasputin
+falco rock me amadeus
 
-# ===== Jazz / Classical =====
-miles davis so what
-john coltrane giant steps
-bill evans peace piece
-debussy clair de lune
-chopin nocturne op 9 no 2
-beethoven moonlight sonata
+# ============================================================
+# Afrobeats / African  (~40 tracks)
+# ============================================================
 
-# ===== Soundtracks =====
+burna boy on the low
+burna boy ye
+burna boy last last
+burna boy big 7
+burna boy alone
+wizkid essence
+wizkid joro
+wizkid ojuelegba
+davido fall
+davido fia
+davido stand strong
+davido unavailable
+rema calm down
+rema dumebi
+rema woman
+asake sungba
+asake terminator
+asake joha
+ckay love nwantiti
+fireboy peru
+fireboy bandana
+yemi alade johnny
+mavins overloading
+diamond platnumz number one
+black coffee superman
+master kg jerusalema
+amapiano osama
+amapiano jerusalema
+fela kuti zombie
+fela kuti water no get enemy
+manu dibango soul makossa
+salif keita yamore
+youssou ndour 7 seconds
+angelique kidjo agolo
+miriam makeba pata pata
+hugh masekela grazing in the grass
+amadou et mariam je pense a toi
+toumani diabate elyne road
+ali farka toure savane
+
+# ============================================================
+# Bollywood / Hindi  (~30 tracks)
+# ============================================================
+
+ar rahman jai ho
+ar rahman tum hi ho lyrics
+ar rahman vande mataram
+arijit singh tum hi ho
+arijit singh channa mereya
+arijit singh kalank title track
+arijit singh kesariya
+arijit singh agar tum saath ho
+shreya ghoshal teri meri
+shreya ghoshal sun raha hai
+sonu nigam abhi mujh mein kahin
+mohit chauhan masakali
+kishore kumar mere sapno ki rani
+mohammed rafi chaudhvin ka chand
+lata mangeshkar lag jaa gale
+asha bhosle piya tu ab to aaja
+benny dayal pappu cant dance saala
+shankar mahadevan breathless
+honey singh blue eyes
+badshah dj waley babu
+neha kakkar kala chashma
+diljit dosanjh do you know
+sidhu moose wala 295
+sidhu moose wala so high
+ap dhillon brown munde
+karan aujla on top
+divine kaam 25
+divine 3:59 am
+naezy aafat
+nucleya bass rani
+king maan meri jaan
+
+# ============================================================
+# Soundtracks / OST  (~50 tracks)
+# ============================================================
+
+# Film
 hans zimmer time inception
+hans zimmer cornfield chase interstellar
+hans zimmer no time for caution
+hans zimmer mountains interstellar
+hans zimmer day one interstellar
 hans zimmer interstellar main theme
-ramin djawadi game of thrones main theme
+hans zimmer the dark knight rises
+hans zimmer ezio's family
+hans zimmer dune main theme
+hans zimmer the burning ship
 john williams imperial march
+john williams main title star wars
+john williams duel of the fates
+john williams hedwigs theme
+john williams jurassic park theme
+john williams indiana jones theme
+john williams schindlers list theme
+ennio morricone the good the bad and the ugly
+ennio morricone cinema paradiso
+ennio morricone gabriels oboe
+howard shore concerning hobbits
+howard shore the bridge of khazad dum
+howard shore the breaking of the fellowship
+howard shore minas tirith
+ramin djawadi game of thrones main theme
+ramin djawadi the rains of castamere
+ramin djawadi light of the seven
+ramin djawadi pacific rim main theme
+james horner my heart will go on
+james horner the rose of titanic
+james horner avatar leaving home
+alexandre desplat the imitation game
+ludwig goransson black panther theme
+ludwig goransson oppenheimer theme
+michael giacchino lost main theme
+michael giacchino up married life
+trevor morris vikings theme
+joe hisaishi one summers day
+joe hisaishi merry go round of life
+joe hisaishi the path of the wind
+joe hisaishi the rain
+joe hisaishi summer
 
-# ===== Playlist URLs (uncomment & add yours) =====
-# https://music.youtube.com/playlist?list=PLrAl6rYAS4Hp5JKPmVqQK1ehRr1iZgX-h
-# https://music.youtube.com/playlist?list=...
+# Game
+jeremy soule skyrim main theme
+jeremy soule far horizons
+toby fox megalovania
+toby fox spider dance
+toby fox bonetrousle
+yasunori mitsuda chrono trigger main theme
+yasunori mitsuda corridors of time
+nobuo uematsu one winged angel
+nobuo uematsu to zanarkand
+nobuo uematsu eyes on me
+keiichi okabe weight of the world
+gareth coker ori main theme
+inon zur skyrim theme
+gustavo santaolalla the last of us main theme
+yoko shimomura kingdom hearts dearly beloved
+mick gordon doom rip and tear
+mick gordon the only thing they fear
+darren korb in the bathhouse
+darren korb cradle of stars
+
+# Anime / show
+yuki kajiura sword art online crossing field
+yoko kanno cowboy bebop tank
+yoko kanno the real folk blues
+hiroyuki sawano attack on titan vogel im kafig
+hiroyuki sawano my war attack on titan
+linked horizon guren no yumiya
+ling tosite sigure unravel
+yui again fma
+ali wild side
+chainsaw man kick back
+yoasobi idol oshi no ko
+spy x family mixed nuts
+demon slayer gurenge
+
+# ============================================================
+# Funk / Disco / Soul-funk  (~30 tracks)
+# ============================================================
+
+james brown super bad
+james brown the payback
+james brown sex machine
+parliament flash light
+parliament give up the funk
+funkadelic one nation under a groove
+funkadelic maggot brain
+sly and the family stone everyday people
+sly and the family stone thank you
+earth wind and fire september
+earth wind and fire boogie wonderland
+earth wind and fire fantasy
+chic le freak
+chic good times
+the gap band you dropped a bomb on me
+kool and the gang celebration
+kool and the gang jungle boogie
+average white band pick up the pieces
+isley brothers between the sheets
+isley brothers shout
+rick james super freak
+prince 1999
+prince little red corvette
+michael jackson dont stop til you get enough
+michael jackson rock with you
+diana ross im coming out
+donna summer i feel love
+donna summer hot stuff
+gloria gaynor i will survive
+bee gees stayin alive
+bee gees night fever
+bruno mars uptown funk
+mark ronson uptown funk
+vulfpeck back pocket
+vulfpeck dean town
+jamiroquai virtual insanity
+jamiroquai cosmic girl
+jamiroquai canned heat
+
+# ============================================================
+# Punk / Hardcore / Post-punk  (~30 tracks)
+# ============================================================
+
+ramones blitzkrieg bop
+ramones i wanna be sedated
+sex pistols anarchy in the uk
+sex pistols god save the queen
+the clash london calling
+the clash should i stay or should i go
+the clash rock the casbah
+dead kennedys holiday in cambodia
+dead kennedys california uber alles
+black flag rise above
+minor threat straight edge
+bad brains banned in dc
+bad religion infected
+nofx the decline
+rancid time bomb
+descendents suburban home
+the offspring come out and play
+the offspring self esteem
+the offspring pretty fly
+green day basket case
+green day longview
+fugazi waiting room
+joy division love will tear us apart
+joy division shes lost control
+the cure boys dont cry
+the cure friday im in love
+new order blue monday
+new order bizarre love triangle
+gang of four damaged goods
+talking heads psycho killer
+talking heads once in a lifetime
+talking heads burning down the house
+
+# ============================================================
+# Lo-fi / Bedroom / Dream-pop  (~25 tracks)
+# ============================================================
+
+cigarettes after sex apocalypse
+cigarettes after sex k.
+cigarettes after sex sweet
+cigarettes after sex cry
+beach house space song
+beach house lover of mine
+mac demarco chamber of reflection
+mac demarco salad days
+gus dapperton i'm just snacking
+clairo bags
+clairo pretty girl
+clairo amoeba
+faye webster kingston
+soccer mommy circle the drain
+girl in red girls
+girl in red i wanna be your girlfriend
+mxmtoon prom dress
+boy pablo everytime
+rex orange county loving is easy
+rex orange county pluto projector
+men i trust show me how
+khai dreams sunkissed
+phum viphurit lover boy
+peach pit alrighty aphrodite
+joji slow dancing in the dark
+joji glimpse of us
+joji sanctuary
+
+# ============================================================
+# Synthwave (more) / Vaporwave / Chiptune  (~20 tracks)
+# ============================================================
+
+carpenter brut turbo killer
+carpenter brut roller mobster
+perturbator humans are such easy prey
+perturbator vengeance
+mitch murder current events
+gunship dark all day
+gunship tech noir
+fm 84 burns like a vapor
+the midnight crockett's theme
+saint pepsi enjoy yourself
+macintosh plus mall theme
+floral shoppe risin sun
+chuck person eccojams vol 1
+holy fuck red lights
+home before the night
+home resonance
+oneohtrix point never chrome country
+chromatics shadow
+chromatics i'm on fire
+electric youth innocence
+miami nights 1984 accelerated
+lazerhawk stand together
+power glove power
+mega drive primal
+miami nights 1984 ocean drive
+
+# ============================================================
+# Misc / Other  (~25 tracks)
+# ============================================================
+
+# Specific influential one-offs
+gotye somebody that i used to know
+mgmt time to pretend
+imagine dragons demons
+oasis champagne supernova
+goo goo dolls iris
+matchbox twenty 3am
+verve bittersweet symphony
+oasis stop crying your heart out
+mr mister kyrie
+a-ha take on me
+toto africa
+eurythmics sweet dreams
+duran duran hungry like the wolf
+men at work down under
+rick astley never gonna give you up
+michael sembello maniac
+peter gabriel sledgehammer
+genesis invisible touch
+phil collins in the air tonight
+phil collins against all odds
+elton john tiny dancer
+elton john rocket man
+elton john your song
+billy joel piano man
+billy joel uptown girl
+neil diamond sweet caroline
+john lennon imagine
+the velvet underground sunday morning
+the velvet underground perfect day
+nick cave red right hand
+nick cave into my arms
+
+# ============================================================
+# Playlist URLs (paste your own here for bulk-add)
+# ============================================================
+# https://music.youtube.com/playlist?list=PL...
