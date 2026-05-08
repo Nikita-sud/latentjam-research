@@ -1,99 +1,149 @@
-# Curated YouTube search queries for diverse audio training data.
-# Each line is a search phrase; lines starting with # are ignored.
+# Search queries / playlist URLs for ytm_opus.py bulk collection.
 #
-# Run:
-#   ./ytm_opus.py --from-file scripts/yt_music_queries.txt --search-limit 20 --max-tracks 5000
+# Each non-empty non-# line is either:
+#   - "<artist> <song>"           → top-N matches for that specific song
+#   - "<artist> <album>"          → tracks of that album
+#   - https://music.youtube.com/playlist?list=...   → all playlist entries
+#   - https://www.youtube.com/playlist?list=...     → same
 #
-# Tune --search-limit to control tracks-per-query and --max-tracks for the
-# overall budget. Add genres / decades / regions you care about.
+# **Important**: queries like "best phonk 2024", "<genre> playlist", "<genre>
+# songs 2024" return *compilation videos* (30 min – 12 h) on YouTube search,
+# not individual tracks. The default --max-duration=900 will filter them out
+# but you'll end up with zero downloads. Use specific artist+track queries
+# OR paste real playlist URLs (which expand entry-by-entry).
+#
+# Recommended:
+#   ./scripts/ytm_opus.py --from-file scripts/yt_music_queries.txt \
+#     --search-limit 5 --max-tracks 5000
 
-# rock by decade
-best rock 2024
-best rock 2018
-best rock 2010
-best rock 2000
-best rock 1990
-best rock 1980
-classic rock hits 70s
+# ===== Phonk =====
+kordhell murder in my mind
+kordhell decay
+phonky tony killshot
+playaphonk i can do it all
+mc gw montagem mahoraga
+mc gw rave
+kasimov phonky town
+dxrk darkside
+neoni binary
+hensonn sahara
 
-# pop by decade
-best pop 2024
-best pop 2018
-best pop 2010
-best pop 2000
-best pop 1990
+# ===== Hip-hop / Rap =====
+metro boomin trance
+metro boomin creepin
+travis scott sicko mode
+travis scott fein
+kendrick lamar humble
+kendrick lamar not like us
+drake one dance
+drake started from the bottom
+21 savage a lot
+yeat lyfestyle
+playboi carti magnolia
+future mask off
+post malone rockstar
+post malone circles
+nas one mic
+the notorious big juicy
 
-# hip hop
-best hip hop 2024
-best hip hop 2018
-best hip hop 2010
-best rap 2005
-golden era hip hop
+# ===== Pop =====
+billie eilish bad guy
+billie eilish ocean eyes
+the weeknd blinding lights
+the weeknd save your tears
+dua lipa levitating
+taylor swift cruel summer
+sabrina carpenter espresso
+ariana grande 7 rings
+olivia rodrigo good 4 u
 
-# electronic
-best electronic 2024
-best electronic 2018
-edm hits 2020
-house music classics
-techno essentials
-synthwave best
-ambient music
+# ===== Rock =====
+arctic monkeys do i wanna know
+arctic monkeys 505
+tame impala the less i know the better
+tame impala feels like we only go backwards
+radiohead creep
+radiohead karma police
+nirvana smells like teen spirit
+foo fighters everlong
+queen bohemian rhapsody
+red hot chili peppers under the bridge
+linkin park in the end
+muse hysteria
 
-# metal
-best metal 2024
-best metal 2010
-classic metal hits
-death metal essentials
+# ===== Electronic / EDM =====
+daft punk one more time
+daft punk get lucky
+deadmau5 strobe
+calvin harris feel so close
+flume never be like you
+porter robinson shelter
+disclosure latch
+fred again delilah
+boards of canada roygbiv
 
-# jazz / blues
-modern jazz 2020s
-classic jazz standards
-blues classics
+# ===== Indie / Alt =====
+arcade fire wake up
+fleet foxes white winter hymnal
+bon iver skinny love
+phoebe bridgers motion sickness
+mitski nobody
+glass animals heat waves
+the strokes last nite
 
-# folk / indie
-indie folk 2020
-indie folk 2015
-folk acoustic best
-indie rock 2020
-indie rock 2015
+# ===== Metal =====
+metallica master of puppets
+system of a down chop suey
+slipknot duality
+gojira stranded
+deftones change
+tool schism
 
-# r&b / soul
-best rnb 2024
-best rnb 2010
-classic soul
+# ===== R&B / Soul =====
+frank ocean pyramids
+sza kill bill
+the weeknd often
+solange cranes in the sky
+daniel caesar best part
+brent faiyaz dead man walking
 
-# country
-country hits 2024
-country classics
+# ===== Russian / CIS =====
+кино группа крови
+кино перемен
+гражданская оборона все идет по плану
+аукцыон зимы не будет
+король и шут камнем по голове
+мумий тролль владивосток 2000
+oxxxymiron биполярочка
+скриптонит вечеринка
+miyagi эндшпиль ты пари
 
-# classical
-classical piano essentials
-classical orchestra famous
+# ===== Latin / Reggaeton =====
+bad bunny me porto bonito
+karol g provenza
+rosalia despechá
+shakira bzrp music sessions
 
-# punk / alt
-punk rock essentials
-alternative rock 2010
-post-punk classics
+# ===== K-pop / J-pop =====
+newjeans super shy
+ive love dive
+yoasobi idol
+king gnu specialz
 
-# regional
-kpop best 2024
-jpop best
-latin pop 2024
-reggaeton hits
-afrobeats 2024
-russian rock best
-russian rap best
-russian pop best
+# ===== Jazz / Classical =====
+miles davis so what
+john coltrane giant steps
+bill evans peace piece
+debussy clair de lune
+chopin nocturne op 9 no 2
+beethoven moonlight sonata
 
-# niche / electronic subgenres
-phonk 2024
-drum and bass best
-trap music best
-lo-fi hip hop
-hardcore techno
-trance classics
+# ===== Soundtracks =====
+hans zimmer time inception
+hans zimmer interstellar main theme
+ramin djawadi game of thrones main theme
+john williams imperial march
 
-# soundtracks / niche
-movie soundtracks orchestra
-video game soundtracks famous
-anime openings best
+# ===== Playlist URLs (uncomment & add yours) =====
+# https://music.youtube.com/playlist?list=PLrAl6rYAS4Hp5JKPmVqQK1ehRr1iZgX-h
+# https://music.youtube.com/playlist?list=...

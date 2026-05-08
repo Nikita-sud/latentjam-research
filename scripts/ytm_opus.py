@@ -444,12 +444,24 @@ def find_existing_by_id(out_dir: Path, video_id: str) -> Path | None:
     return None
 
 
-def expand_input(raw: str, search_limit: int) -> list[str]:
+def expand_input(
+    raw: str,
+    search_limit: int,
+    *,
+    min_duration: float | None = None,
+    max_duration: float | None = None,
+) -> list[str]:
     """Expand a search query / playlist URL into individual video URLs.
 
-    - Plain video URL → returned as-is.
+    - Plain video URL → returned as-is (its duration is checked later in
+      ``process_url`` once full metadata is fetched).
     - ``ytsearch...:query`` or bare query (no scheme) → top N search results.
     - Playlist URL (``list=...``) → all entries.
+
+    When ``min_duration`` / ``max_duration`` are set and the flat-playlist
+    response includes a ``duration`` per entry, out-of-range entries are
+    dropped here so we never even open the page. Entries with missing
+    duration pass through and get re-checked in ``process_url``.
     """
     raw = raw.strip()
     if not raw or raw.startswith("#"):
@@ -459,7 +471,6 @@ def expand_input(raw: str, search_limit: int) -> list[str]:
     is_search = raw.startswith("ytsearch")
 
     if is_url and "list=" in raw and "/watch?" not in raw:
-        # Pure playlist URL; expand entries.
         target = raw
     elif is_url:
         return [raw]
@@ -479,10 +490,25 @@ def expand_input(raw: str, search_limit: int) -> list[str]:
         return []
 
     out: list[str] = []
+    skipped_duration = 0
     for entry in data.get("entries") or []:
         vid = clean_value(entry.get("id"))
-        if vid:
-            out.append(f"https://www.youtube.com/watch?v={vid}")
+        if not vid:
+            continue
+        duration = entry.get("duration")
+        if isinstance(duration, (int, float)):
+            if min_duration is not None and duration < min_duration:
+                skipped_duration += 1
+                continue
+            if max_duration is not None and duration > max_duration:
+                skipped_duration += 1
+                continue
+        out.append(f"https://www.youtube.com/watch?v={vid}")
+    if skipped_duration:
+        print(
+            f"  filtered {skipped_duration} of {len(data.get('entries') or [])} "
+            f"entries by duration (kept {len(out)})"
+        )
     return out
 
 
@@ -503,6 +529,16 @@ def process_url(url: str, args: argparse.Namespace) -> str:
     except subprocess.CalledProcessError:
         print(f"failed: cannot fetch info for {url}", file=sys.stderr)
         return "failed"
+
+    duration = info.get("duration")
+    if isinstance(duration, (int, float)):
+        if args.max_duration > 0 and duration > args.max_duration:
+            mins = duration / 60
+            print(f"skip: too long ({mins:.1f} min > {args.max_duration / 60:.1f} min)")
+            return "skipped"
+        if args.min_duration > 0 and duration < args.min_duration:
+            print(f"skip: too short ({duration:.0f} s)")
+            return "skipped"
 
     video_id = clean_value(info.get("id")) or early_id or "unknown"
     description = clean_value(info.get("description"))
@@ -663,6 +699,49 @@ def process_url(url: str, args: argparse.Namespace) -> str:
     return "downloaded"
 
 
+def cleanup_too_long(out_dir: Path, max_duration: float) -> None:
+    """Remove any *.opus files in ``out_dir`` whose duration exceeds the limit.
+
+    Useful after a run that pre-dated the duration filter (e.g. left a stray
+    3-hour DJ-mix file). Walks the directory, probes each file with ffprobe,
+    deletes those above ``max_duration`` seconds. No-op when ``max_duration``
+    is 0 or the directory does not exist.
+    """
+    if max_duration <= 0 or not out_dir.exists():
+        return
+    deleted = 0
+    inspected = 0
+    for path in sorted(out_dir.glob("*.opus")):
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(path),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            continue
+        inspected += 1
+        try:
+            duration = float(result.stdout.strip())
+        except ValueError:
+            continue
+        if duration > max_duration:
+            print(f"removing {path.name} ({duration / 60:.1f} min)")
+            path.unlink(missing_ok=True)
+            deleted += 1
+    print(f"cleanup: removed {deleted} of {inspected} files (limit {max_duration / 60:.1f} min)")
+
+
 def collect_inputs(args: argparse.Namespace) -> list[str]:
     raw_inputs: list[str] = list(args.urls)
     for query in args.search:
@@ -715,11 +794,32 @@ def main() -> None:
         default=None,
         help="Stop after this many unique videos resolve from the inputs.",
     )
+    parser.add_argument(
+        "--min-duration",
+        type=float,
+        default=60.0,
+        help="Drop videos shorter than this many seconds (default: 60). 0 disables.",
+    )
+    parser.add_argument(
+        "--max-duration",
+        type=float,
+        default=900.0,
+        help="Drop videos longer than this many seconds (default: 900 = 15 min). "
+        "Filters out hour-long DJ mixes, full albums, and 'best of' compilations. "
+        "0 disables.",
+    )
     parser.add_argument("--genre", help="Override genre for all URLs")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing .opus files")
     parser.add_argument("--keep-webm", action="store_true", help="Keep downloaded source .webm")
     parser.add_argument("--no-cover", action="store_true", help="Do not download/embed cover art")
     parser.add_argument("--musicbrainz", action="store_true", help="Add Picard-style tags from MusicBrainz")
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Before downloading, scan --out-dir and delete any existing .opus "
+        "files longer than --max-duration. Use to drop accidental DJ-mix / "
+        "compilation downloads from earlier runs.",
+    )
     args = parser.parse_args()
 
     require_tool("yt-dlp")
@@ -727,18 +827,30 @@ def main() -> None:
     require_tool("ffprobe")
 
     raw_inputs = collect_inputs(args)
-    if not raw_inputs:
-        parser.error("provide at least one URL, --search, or --from-file")
+    if not raw_inputs and not args.cleanup:
+        parser.error("provide at least one URL / --search / --from-file, or --cleanup")
 
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"output: {out_dir}")
 
+    if args.cleanup:
+        cleanup_too_long(out_dir, args.max_duration)
+        if not raw_inputs:
+            return
+
     print(f"resolving {len(raw_inputs)} input(s)...")
+    min_d = args.min_duration if args.min_duration > 0 else None
+    max_d = args.max_duration if args.max_duration > 0 else None
     seen_ids: set[str] = set()
     urls: list[str] = []
     for raw in raw_inputs:
-        for resolved in expand_input(raw, args.search_limit):
+        for resolved in expand_input(
+            raw,
+            args.search_limit,
+            min_duration=min_d,
+            max_duration=max_d,
+        ):
             vid = video_id_from_url(resolved)
             if vid is None:
                 continue

@@ -37,3 +37,6 @@ wandb/
 *.tflite
 *.npz
 *.npy
+
+# macOS Finder metadata
+.DS_Store
