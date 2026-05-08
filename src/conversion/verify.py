@@ -20,7 +20,8 @@ import onnxruntime as ort
 import torch
 
 from conversion.export_onnx import MertOnnxWrapper
-from encoder.mert_encoder import EMBEDDING_DIM, WINDOW_SAMPLES, MertEncoder
+from encoder.mert_encoder import EMBEDDING_DIM, MODEL_VERSION, WINDOW_SAMPLES, MertEncoder
+from utils.wandb_log import log_metrics, log_summary, wandb_options, wandb_run
 
 
 def _generate_or_load_samples(
@@ -109,6 +110,7 @@ def _ort_embed(session: ort.InferenceSession, wav: np.ndarray) -> np.ndarray:
     default=None,
     help="Optional JSON report path.",
 )
+@wandb_options
 def main(
     onnx_path: Path,
     n: int,
@@ -116,6 +118,10 @@ def main(
     audio_root: Path | None,
     cache_dir: Path,
     out: Path | None,
+    wandb_project: str | None,
+    wandb_entity: str | None,
+    wandb_run_name: str | None,
+    wandb_tags: tuple[str, ...],
 ) -> None:
     encoder = MertEncoder(cache_dir=cache_dir, device="cpu")
     pooled = encoder.pooled_module
@@ -158,6 +164,26 @@ def main(
             f"WARNING: mean cosine {report['cosine_mean']:.5f} is below the 0.9995 gate.",
             err=True,
         )
+
+    config = {
+        "onnx_path": str(onnx_path),
+        "n_samples": int(n),
+        "seed": int(seed),
+        "audio_root": str(audio_root) if audio_root else None,
+        "model_version": MODEL_VERSION,
+        "onnx_size_mb": round(onnx_path.stat().st_size / 1e6, 2),
+    }
+    with wandb_run(
+        wandb_project,
+        entity=wandb_entity,
+        run_name=wandb_run_name,
+        tags=wandb_tags,
+        config=config,
+        job_type="verify",
+    ) as run:
+        loggable = {k: v for k, v in report.items() if k not in {"onnx_path", "audio_root"}}
+        log_metrics(run, loggable)
+        log_summary(run, loggable)
 
 
 if __name__ == "__main__":

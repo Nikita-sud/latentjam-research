@@ -37,6 +37,7 @@ dev = [
   "matplotlib>=3.8",
   "seaborn>=0.13",
   "scikit-learn>=1.4",
+  "wandb>=0.16,<1",
 ]
 recommend = [
   "faiss-cpu>=1.8",

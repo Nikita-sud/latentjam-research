@@ -47,6 +47,18 @@ make eval STORE=models/store/fma.parquet DATASET=fma_small
 
 Random-baseline recall@10 on FMA-small's 8 balanced genres is `0.125`. The v0 quality gate is `>= 0.65`.
 
+## Experiment tracking
+
+`run_eval`, `conversion.verify`, and `conversion.bench` can stream their JSON reports to Weights & Biases. wandb is opt-in: pass `--wandb-project latentjam-research` (and optionally `--wandb-tag ...`) on any of these CLIs. Without that flag, no wandb code runs and no network calls happen.
+
+```bash
+wandb login                       # one-time
+make eval STORE=models/store/fma.parquet DATASET=fma_small \
+    -- --wandb-project latentjam-research --wandb-tag dataset:fma --wandb-tag baseline
+```
+
+See `CLAUDE.md` for the full flag list and the `model_version` pinning convention used in `wandb.config`.
+
 ## Layout
 
 ```text

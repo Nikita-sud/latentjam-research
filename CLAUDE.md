@@ -65,6 +65,41 @@ Optional sidecar `embeddings.npy` is a `(N, D)` float32 matrix row-aligned to th
 
 Target is **`onnxruntime-android` full AAR**, NOT the reduced "ORT Mobile" build. The reduced build silently strips operators that transformer audio models need. This repo only emits ONNX artifacts; the AAR choice belongs to the app repo at integration time.
 
+## Experiment tracking (Weights & Biases)
+
+`run_eval`, `conversion.verify`, and `conversion.bench` all accept the same
+`--wandb-*` flags via the `wandb_options` decorator in
+[`src/utils/wandb_log.py`](src/utils/wandb_log.py). When `--wandb-project` is
+unset (the default), nothing wandb-related runs — `wandb` is never imported,
+so the dep stays optional in cost.
+
+Auth uses standard wandb conventions; do not configure auth in code:
+
+```bash
+wandb login                    # one-time, stores key in ~/.netrc
+# or:
+export WANDB_API_KEY=...        # CI / scripted runs
+export WANDB_MODE=offline       # record runs locally without uploading
+```
+
+Standard flags on every wandb-aware CLI:
+
+| Flag | Purpose |
+|---|---|
+| `--wandb-project NAME` | Enable logging into the named project. Unset = disabled. |
+| `--wandb-entity NAME` | Team or username (default: from `wandb login`). |
+| `--wandb-run-name NAME` | Override the auto-generated run name. |
+| `--wandb-tag TAG` | Repeatable; attaches a tag (e.g. `--wandb-tag fma --wandb-tag baseline`). |
+
+Each run logs the same shape it writes to disk (the JSON report), flattened to
+`section/metric` keys. The `model_version` string and embedding dim are pinned
+in `wandb.config` so runs are comparable across encoder revisions.
+
+Naming convention: project = `latentjam-research`. Run names are auto-generated
+unless overridden; use `--wandb-tag` to slice (e.g. `dataset:fma`,
+`encoder:mert-95m`, `quant:int8`). `job_type` is set automatically per CLI
+(`eval/<dataset>`, `verify`, `bench`).
+
 ## Common commands
 
 ```bash

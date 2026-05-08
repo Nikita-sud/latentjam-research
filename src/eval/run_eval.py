@@ -11,6 +11,7 @@ import numpy as np
 
 from eval.metrics import album_cohesion, recall_at_k_genre, tag_jaccard_at_k
 from predictor.store import EmbeddingStore
+from utils.wandb_log import log_metrics, log_summary, wandb_options, wandb_run
 
 
 def _embedding_matrix(rows: list) -> np.ndarray:
@@ -48,12 +49,17 @@ def _embedding_matrix(rows: list) -> np.ndarray:
     default=None,
     help='Where to write the JSON report (default: stdout).',
 )
+@wandb_options
 def main(
     store_path: Path,
     dataset: str,
     audio_root: Path | None,
     metadata_root: Path | None,
     out: Path | None,
+    wandb_project: str | None,
+    wandb_entity: str | None,
+    wandb_run_name: str | None,
+    wandb_tags: tuple[str, ...],
 ) -> None:
     store = EmbeddingStore.open(store_path)
     if len(store) == 0:
@@ -62,6 +68,14 @@ def main(
     df = store.df.copy()
     ds = dataset.lower()
     report: dict = {"store_path": str(store_path), "dataset": ds, "n_store": len(store)}
+    model_versions = sorted(set(df["model_version"].dropna().astype(str).to_list()))
+    config = {
+        "store_path": str(store_path),
+        "dataset": ds,
+        "n_store": len(store),
+        "model_versions": model_versions,
+        "embedding_dim": store.dim,
+    }
 
     if ds == "fma_small":
         from eval.fma import align_store_to_fma, load_fma_index
@@ -120,6 +134,19 @@ def main(
         out.write_text(payload + "\n")
     else:
         sys.stdout.write(payload + "\n")
+
+    with wandb_run(
+        wandb_project,
+        entity=wandb_entity,
+        run_name=wandb_run_name,
+        tags=wandb_tags,
+        config=config,
+        job_type=f"eval/{ds}",
+    ) as run:
+        # Strip non-numeric metadata before logging.
+        loggable = {k: v for k, v in report.items() if k != "store_path"}
+        log_metrics(run, loggable)
+        log_summary(run, loggable)
 
 
 if __name__ == "__main__":
