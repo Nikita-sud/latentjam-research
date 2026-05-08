@@ -434,10 +434,7 @@ def video_id_from_url(url: str) -> str | None:
 
 
 _TITLE_NOISE_PATTERNS = [
-    # Annotation suffixes: ()/[] containing only metadata about how the upload
-    # is presented, not the audio content. "(Music Video)" = same audio as
-    # "(Audio)"; "(Extended)" / "(Slowed)" / "(Remix)" are NOT in this list
-    # because they ARE real audio variants we want to keep separate.
+    # Presentation-only annotations — same audio under different upload framing.
     r"\(\s*(?:official\s+)?(?:music\s*video|mv|m/v|lyric\s*video|lyrics?|audio|visualizer|video)\s*\)",
     r"\[\s*(?:official\s+)?(?:music\s*video|mv|m/v|lyric\s*video|lyrics?|audio|visualizer|video)\s*\]",
     r"\(\s*hq\s*\)",
@@ -445,6 +442,16 @@ _TITLE_NOISE_PATTERNS = [
     r"\[\s*hd\s*\]",
     r"\[\s*(?:remaster(?:ed)?)\s*\d*\s*\]",
     r"\(\s*remaster(?:ed)?\s*\)",
+    # Loop / pad annotations — these uploads just splice the same source audio
+    # to fill 10 min / 1 h / "Extended". For SSL this is the same content
+    # repeated, not a real variant. ``(Remix)``, ``(Slowed)``, ``(Sped Up)``
+    # and ``(Live)`` ARE different audio and stay outside this list.
+    r"\[\s*extended\s*(?:version|mix|cut|edit)?\s*\]",
+    r"\(\s*extended\s*(?:version|mix|cut|edit)?\s*\)",
+    r"\[\s*\d+\s*(?:hours?|h|minutes?|mins?|m)\s*(?:loop|version|mix)?\s*\]",
+    r"\(\s*\d+\s*(?:hours?|h|minutes?|mins?|m)\s*(?:loop|version|mix)?\s*\)",
+    r"\[\s*loop(?:ed)?\s*\]",
+    r"\(\s*loop(?:ed)?\s*\)",
     r"\s+-\s*topic\s*$",
     r"\s*\|\s*[^|]*$",  # trailing " | Channel Name"
 ]
@@ -842,10 +849,12 @@ def main() -> None:
     parser.add_argument(
         "--max-duration",
         type=float,
-        default=900.0,
-        help="Drop videos longer than this many seconds (default: 900 = 15 min). "
-        "Filters out hour-long DJ mixes, full albums, and 'best of' compilations. "
-        "0 disables.",
+        default=600.0,
+        help="Drop videos longer than this many seconds (default: 600 = 10 min). "
+        "Filters out hour-long DJ mixes, full albums, 'best of' compilations, "
+        "and most ``[Extended]`` / ``[10 MINUTE]`` looped re-uploads. Long prog "
+        "tracks (e.g. Pink Floyd 'Echoes' at 23 min) won't pass — bump if you "
+        "need them. 0 disables.",
     )
     parser.add_argument("--genre", help="Override genre for all URLs")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing .opus files")
