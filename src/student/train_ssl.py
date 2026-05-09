@@ -149,6 +149,15 @@ def _prepare_splits(
 @click.option("--weight-decay", type=float, default=1e-4, show_default=True)
 @click.option("--decode-workers", type=int, default=12, show_default=True)
 @click.option(
+    "--data-workers",
+    type=int,
+    default=4,
+    show_default=True,
+    help="Per-DataLoader subprocess count for the train + val loaders. "
+    "0 = main-thread loading (slow on GPU due to forward/backward stalls "
+    "while augmenting + collating); 4-8 saturates an A100 with bs=512.",
+)
+@click.option(
     "--cache-dir",
     type=click.Path(file_okay=False, path_type=Path),
     default=Path("models/cache/ssl_audio"),
@@ -185,6 +194,7 @@ def main(
     lr: float,
     weight_decay: float,
     decode_workers: int,
+    data_workers: int,
     cache_dir: Path | None,
     projector_dim: int,
     projector_hidden: int,
@@ -263,20 +273,26 @@ def main(
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
 
+    pin_memory = torch_device.type == "cuda"
+    persistent = data_workers > 0
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=data_workers,
         collate_fn=collate_ssl,
         drop_last=True,
+        pin_memory=pin_memory,
+        persistent_workers=persistent,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=min(batch_size, max(2, len(val_ds))),
         shuffle=False,
-        num_workers=0,
+        num_workers=data_workers,
         collate_fn=collate_ssl,
+        pin_memory=pin_memory,
+        persistent_workers=persistent,
     )
 
     mel_config = MelConfig()
