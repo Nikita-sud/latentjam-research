@@ -822,17 +822,24 @@ def main() -> None:
     parser.add_argument(
         "--search-limit",
         type=int,
-        default=20,
-        help="Number of search results per --search query.",
+        default=3,
+        help="Number of search results per --search query (default: 3). "
+        "Each search uses one network call; bigger values slow expansion. "
+        "Top-1 is often a compilation/album for some queries, so 3 gives "
+        "duration filter + title dedup room to land on a real song.",
     )
     parser.add_argument(
         "--from-file",
         help="File with URLs / playlist URLs / queries (one per line, # for comments).",
     )
+    # Default to ``<repo_root>/data/raw/yt_music`` regardless of where the
+    # script is launched from. ``Path(__file__).resolve().parent`` is
+    # ``scripts/``; its parent is the repo root.
+    default_out = Path(__file__).resolve().parent.parent / "data" / "raw" / "yt_music"
     parser.add_argument(
         "--out-dir",
-        default="data/raw/yt_music",
-        help="Output directory (default: data/raw/yt_music).",
+        default=str(default_out),
+        help=f"Output directory (default: {default_out}).",
     )
     parser.add_argument(
         "--max-tracks",
