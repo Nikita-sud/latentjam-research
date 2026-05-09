@@ -426,11 +426,20 @@ def square_cover(image_path: Path, size: int = 1000) -> Path:
 _YT_DLP_COMMON_FLAGS: list[str] = []
 
 
-def configure_yt_dlp_flags(cookies_from_browser: str | None) -> None:
-    """Set process-wide yt-dlp flags (cookies, etc.) that prefix every call."""
+def configure_yt_dlp_flags(
+    *,
+    cookies_from_browser: str | None,
+    cookies_file: str | None,
+    sleep_requests: float,
+) -> None:
+    """Set process-wide yt-dlp flags (cookies, throttling) that prefix every call."""
     _YT_DLP_COMMON_FLAGS.clear()
     if cookies_from_browser:
         _YT_DLP_COMMON_FLAGS.extend(["--cookies-from-browser", cookies_from_browser])
+    if cookies_file:
+        _YT_DLP_COMMON_FLAGS.extend(["--cookies", cookies_file])
+    if sleep_requests > 0:
+        _YT_DLP_COMMON_FLAGS.extend(["--sleep-requests", str(sleep_requests)])
 
 
 def yt_dlp_cmd(*extra: str) -> list[str]:
@@ -992,11 +1001,28 @@ def main() -> None:
         "--cookies-from-browser",
         default=None,
         metavar="BROWSER",
-        help="Pass cookies from a logged-in browser to yt-dlp (e.g. 'chrome', "
-        "'firefox', 'safari', 'brave'). Highly recommended for bulk runs: "
-        "without it YouTube triggers 'Sign in to confirm you're not a bot' "
-        "after a few dozen anonymous requests, after which all calls fail. "
-        "See yt-dlp's --cookies-from-browser docs for the exact spec.",
+        help="Pass cookies from a logged-in browser to yt-dlp. Supported: "
+        "chrome, chromium, firefox, safari, brave, edge, opera, vivaldi, whale. "
+        "Arc isn't directly supported; export cookies via 'Get cookies.txt "
+        "LOCALLY' extension and use --cookies instead. Recommended for bulk "
+        "runs: without cookies YouTube triggers 'Sign in to confirm you're "
+        "not a bot' after ~30-50 anonymous requests.",
+    )
+    parser.add_argument(
+        "--cookies",
+        default=None,
+        metavar="FILE",
+        help="Path to a Netscape-format cookies.txt file (alternative to "
+        "--cookies-from-browser). Use this when the browser isn't directly "
+        "supported by yt-dlp (e.g. Arc): install a 'Get cookies.txt' "
+        "extension, log in to YouTube, export the cookies file, point here.",
+    )
+    parser.add_argument(
+        "--sleep-requests",
+        type=float,
+        default=0.0,
+        help="Pass --sleep-requests SEC to yt-dlp (delay between requests). "
+        "Use 1-2 for bulk runs to reduce anti-bot trigger rate.",
     )
     parser.add_argument(
         "--resolve-cache",
@@ -1054,9 +1080,15 @@ def main() -> None:
     require_tool("ffmpeg")
     require_tool("ffprobe")
 
-    configure_yt_dlp_flags(args.cookies_from_browser)
+    configure_yt_dlp_flags(
+        cookies_from_browser=args.cookies_from_browser,
+        cookies_file=args.cookies,
+        sleep_requests=args.sleep_requests,
+    )
     if args.cookies_from_browser:
-        print(f"yt-dlp cookies: {args.cookies_from_browser}")
+        print(f"yt-dlp cookies: browser={args.cookies_from_browser}")
+    elif args.cookies:
+        print(f"yt-dlp cookies: file={args.cookies}")
 
     raw_inputs = collect_inputs(args)
     if not raw_inputs and not args.cleanup:
