@@ -126,6 +126,16 @@ def _prepare_splits(
     show_default=True,
 )
 @click.option(
+    "--subset",
+    type=click.Choice(["small", "medium", "large"], case_sensitive=False),
+    default="small",
+    show_default=True,
+    help="FMA subset filter for the manifest. 'small' keeps only the 8k "
+    "balanced-genre tracks; 'medium' keeps small+medium (~25k); 'large' "
+    "keeps everything (~106k). Audio-root must point at the matching "
+    "extracted directory (e.g. data/raw/fma_large for --subset large).",
+)
+@click.option(
     "--out",
     "out_path",
     type=click.Path(dir_okay=False, path_type=Path),
@@ -167,6 +177,7 @@ def _prepare_splits(
 def main(
     audio_root: Path,
     metadata_root: Path,
+    subset: str,
     out_path: Path,
     device: str,
     epochs: int,
@@ -196,7 +207,7 @@ def main(
     np.random.seed(seed)
 
     manifest = load_fma_manifest(
-        audio_root, metadata_root, subset="small", existing_only=True
+        audio_root, metadata_root, subset=subset.lower(), existing_only=True
     )
     if limit_tracks is not None:
         manifest = manifest.head(limit_tracks).reset_index(drop=True)
