@@ -65,7 +65,7 @@ eval:
 	$(PYTHON) -m eval.run_eval --store "$(STORE)" --dataset "$(DATASET)"
 
 download-fma:
-	$(PYTHON) scripts/download_fma.py
+	$(PYTHON) scripts/download_fma.py $${SUBSET:+--subset $$SUBSET} $${KEEP_ZIP:+--keep-zip}
 
 download-mtat:
 	$(PYTHON) scripts/download_mtat.py
