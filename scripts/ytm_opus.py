@@ -423,8 +423,22 @@ def square_cover(image_path: Path, size: int = 1000) -> Path:
     return image_path
 
 
+_YT_DLP_COMMON_FLAGS: list[str] = []
+
+
+def configure_yt_dlp_flags(cookies_from_browser: str | None) -> None:
+    """Set process-wide yt-dlp flags (cookies, etc.) that prefix every call."""
+    _YT_DLP_COMMON_FLAGS.clear()
+    if cookies_from_browser:
+        _YT_DLP_COMMON_FLAGS.extend(["--cookies-from-browser", cookies_from_browser])
+
+
+def yt_dlp_cmd(*extra: str) -> list[str]:
+    return ["yt-dlp", *_YT_DLP_COMMON_FLAGS, *extra]
+
+
 def get_info(url: str) -> dict[str, Any]:
-    result = run(["yt-dlp", "--skip-download", "--dump-single-json", url], capture=True)
+    result = run(yt_dlp_cmd("--skip-download", "--dump-single-json", url), capture=True)
     return json.loads(result.stdout)
 
 
@@ -437,24 +451,27 @@ def video_id_from_url(url: str) -> str | None:
 
 
 _TITLE_NOISE_PATTERNS = [
-    # Presentation-only annotations — same audio under different upload framing.
-    r"\(\s*(?:official\s+)?(?:music\s*video|mv|m/v|lyric\s*video|lyrics?|audio|visualizer|video)\s*\)",
-    r"\[\s*(?:official\s+)?(?:music\s*video|mv|m/v|lyric\s*video|lyrics?|audio|visualizer|video)\s*\]",
-    r"\(\s*hq\s*\)",
-    r"\(\s*hd\s*\)",
-    r"\[\s*hd\s*\]",
-    r"\[\s*(?:remaster(?:ed)?)\s*\d*\s*\]",
-    r"\(\s*remaster(?:ed)?\s*\)",
-    # Loop / pad annotations — these uploads just splice the same source audio
-    # to fill 10 min / 1 h / "Extended". For SSL this is the same content
-    # repeated, not a real variant. ``(Remix)``, ``(Slowed)``, ``(Sped Up)``
-    # and ``(Live)`` ARE different audio and stay outside this list.
+    # Presentation-only annotations: bracket contents containing any of these
+    # keywords are stripped, regardless of what other words sit next to them.
+    # Catches "(Official Video Remastered)", "(Music Video Remastered 2011)",
+    # "(Lyric Video HD)", etc. without needing one regex per combination.
+    r"\([^()]*\b(?:official|music\s*video|mv|m/v|lyric\s*video|lyrics?|audio|visualizer|remaster(?:ed)?|hd|hq)\b[^()]*\)",
+    r"\[[^\[\]]*\b(?:official|music\s*video|mv|m/v|lyric\s*video|lyrics?|audio|visualizer|remaster(?:ed)?|hd|hq)\b[^\[\]]*\]",
+    # Loop / pad uploads — same audio padded to 10 min / 1 hour. Real audio
+    # variants — (Remix), (Slowed), (Sped Up), (Live) — stay outside this list.
     r"\[\s*extended\s*(?:version|mix|cut|edit)?\s*\]",
     r"\(\s*extended\s*(?:version|mix|cut|edit)?\s*\)",
     r"\[\s*\d+\s*(?:hours?|h|minutes?|mins?|m)\s*(?:loop|version|mix)?\s*\]",
     r"\(\s*\d+\s*(?:hours?|h|minutes?|mins?|m)\s*(?:loop|version|mix)?\s*\)",
     r"\[\s*loop(?:ed)?\s*\]",
     r"\(\s*loop(?:ed)?\s*\)",
+    # Featured-artist sections: "(feat. Wizkid & Kyla)" / "[ft. Drake]" /
+    # standalone " ft. Wizkid & Kyla". These are credit metadata, not
+    # different audio. We strip them so two uploads of the same song that
+    # disagree on whether to mention features dedup correctly.
+    r"\(\s*(?:feat|ft|featuring|with)\b\.?[^)]*\)",
+    r"\[\s*(?:feat|ft|featuring|with)\b\.?[^\]]*\]",
+    r"\s+(?:feat|ft|featuring|with)\b\.?[^()\[\]]*$",
     r"\s+-\s*topic\s*$",
     r"\s*\|\s*[^|]*$",  # trailing " | Channel Name"
 ]
@@ -466,9 +483,11 @@ def normalize_title(title: str) -> str:
     """Collapse common YouTube title decoration so re-uploads of the same
     song hash to the same key.
 
-    Drops "(Official Video)", "(Lyrics)", "[Remastered 2011]", " - Topic",
-    " | Some Channel" suffixes, plus all punctuation; collapses whitespace
-    and lowercases. Doesn't try to match across artists or remix variants.
+    Strips ``(Official Music Video Remastered)``-style brackets, ``[Lyrics]``,
+    feat-credit sections, ``[Extended]``/``[N-hour-loop]`` pads, ``- Topic``,
+    trailing channel names, and all punctuation; collapses whitespace and
+    lowercases. Token order is preserved — ``title_dedup_key`` does the
+    order-invariant pass.
     """
     if not title:
         return ""
@@ -477,6 +496,21 @@ def normalize_title(title: str) -> str:
     s = _TITLE_PUNCT_RE.sub(" ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+def title_dedup_key(title: str) -> str:
+    """Order-invariant dedup key derived from ``normalize_title``.
+
+    Two uploads that disagree on artist-song token order ("Drake - One Dance"
+    vs "One Dance - Drake") still hash to the same key. Real audio variants
+    that contribute extra tokens — ``Live Aid 1985``, ``Slowed Reverb``,
+    ``Reading Festival 2022`` — produce different keys and stay separate.
+    """
+    norm = normalize_title(title)
+    if not norm:
+        return ""
+    tokens = sorted(set(t for t in norm.split() if len(t) >= 2))
+    return " ".join(tokens)
 
 
 def find_existing_by_id(out_dir: Path, video_id: str) -> Path | None:
@@ -529,7 +563,7 @@ def expand_input(
 
     try:
         result = run(
-            ["yt-dlp", "--flat-playlist", "--dump-single-json", target],
+            yt_dlp_cmd("--flat-playlist", "--dump-single-json", target),
             capture=True,
         )
         data = json.loads(result.stdout)
@@ -631,14 +665,13 @@ def process_url(url: str, args: argparse.Namespace) -> str:
     print(f"metadata: {title} - {artist or 'unknown artist'}")
     try:
         run(
-            [
-                "yt-dlp",
+            yt_dlp_cmd(
                 "-f",
                 "251",
                 "-o",
                 str(out_dir / f"{stem} [{video_id}].%(ext)s"),
                 url,
-            ]
+            )
         )
     except subprocess.CalledProcessError:
         print(f"failed: yt-dlp download for {url}", file=sys.stderr)
@@ -648,8 +681,7 @@ def process_url(url: str, args: argparse.Namespace) -> str:
     if not args.no_cover:
         try:
             run(
-                [
-                    "yt-dlp",
+                yt_dlp_cmd(
                     "--skip-download",
                     "--write-thumbnail",
                     "--convert-thumbnails",
@@ -657,7 +689,7 @@ def process_url(url: str, args: argparse.Namespace) -> str:
                     "-o",
                     f"{cover_prefix}.%(ext)s",
                     url,
-                ]
+                )
             )
             cover_path = Path(f"{cover_prefix}.jpg")
             if cover_path.exists():
@@ -950,10 +982,21 @@ def main() -> None:
     parser.add_argument(
         "--resolve-workers",
         type=int,
-        default=8,
-        help="Parallel workers for the search-resolution phase (default: 8). "
+        default=4,
+        help="Parallel workers for the search-resolution phase (default: 4). "
         "Each worker spawns its own yt-dlp subprocess; bigger values resolve "
-        "faster but risk hitting YouTube rate limits.",
+        "faster but risk hitting YouTube anti-bot blocks (which require cookies "
+        "to recover).",
+    )
+    parser.add_argument(
+        "--cookies-from-browser",
+        default=None,
+        metavar="BROWSER",
+        help="Pass cookies from a logged-in browser to yt-dlp (e.g. 'chrome', "
+        "'firefox', 'safari', 'brave'). Highly recommended for bulk runs: "
+        "without it YouTube triggers 'Sign in to confirm you're not a bot' "
+        "after a few dozen anonymous requests, after which all calls fail. "
+        "See yt-dlp's --cookies-from-browser docs for the exact spec.",
     )
     parser.add_argument(
         "--resolve-cache",
@@ -1011,6 +1054,10 @@ def main() -> None:
     require_tool("ffmpeg")
     require_tool("ffprobe")
 
+    configure_yt_dlp_flags(args.cookies_from_browser)
+    if args.cookies_from_browser:
+        print(f"yt-dlp cookies: {args.cookies_from_browser}")
+
     raw_inputs = collect_inputs(args)
     if not raw_inputs and not args.cleanup:
         parser.error("provide at least one URL / --search / --from-file, or --cleanup")
@@ -1053,20 +1100,22 @@ def main() -> None:
             )
 
     seen_ids: set[str] = set()
-    seen_titles: set[str] = set()
+    seen_keys: set[str] = set()
     title_dupes = 0
     urls: list[str] = []
     for resolved_url, resolved_title in flat_results:
         vid = video_id_from_url(resolved_url)
         if vid is None or vid in seen_ids:
             continue
-        norm = normalize_title(resolved_title) if not args.allow_title_duplicates else ""
-        if norm and norm in seen_titles:
+        # Token-sorted key catches both "Artist - Song" / "Song - Artist"
+        # ordering and feat./ft. variants.
+        dedup_key = title_dedup_key(resolved_title) if not args.allow_title_duplicates else ""
+        if dedup_key and dedup_key in seen_keys:
             title_dupes += 1
             continue
         seen_ids.add(vid)
-        if norm:
-            seen_titles.add(norm)
+        if dedup_key:
+            seen_keys.add(dedup_key)
         urls.append(resolved_url)
         if args.max_tracks is not None and len(urls) >= args.max_tracks:
             break
