@@ -25,12 +25,15 @@ from __future__ import annotations
 
 import argparse
 import base64
+import concurrent.futures
+import hashlib
 import json
 import re
 import shutil
 import struct
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -535,7 +538,6 @@ def expand_input(
         return []
 
     out: list[tuple[str, str]] = []
-    skipped_duration = 0
     for entry in data.get("entries") or []:
         vid = clean_value(entry.get("id"))
         if not vid:
@@ -543,18 +545,11 @@ def expand_input(
         duration = entry.get("duration")
         if isinstance(duration, (int, float)):
             if min_duration is not None and duration < min_duration:
-                skipped_duration += 1
                 continue
             if max_duration is not None and duration > max_duration:
-                skipped_duration += 1
                 continue
         title = clean_value(entry.get("title"))
         out.append((f"https://www.youtube.com/watch?v={vid}", title))
-    if skipped_duration:
-        print(
-            f"  filtered {skipped_duration} of {len(data.get('entries') or [])} "
-            f"entries by duration (kept {len(out)})"
-        )
     return out
 
 
@@ -788,6 +783,111 @@ def cleanup_too_long(out_dir: Path, max_duration: float) -> None:
     print(f"cleanup: removed {deleted} of {inspected} files (limit {max_duration / 60:.1f} min)")
 
 
+def _resolution_cache_key(
+    raw: str, search_limit: int, min_d: float | None, max_d: float | None
+) -> str:
+    """Hash that invalidates only when the resolution semantics change.
+
+    Same query under same search-limit + duration filters → same cache hit.
+    Bumping search-limit or changing the duration cap busts that key cleanly.
+    """
+    payload = f"{raw}\x00{search_limit}\x00{min_d}\x00{max_d}".encode()
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _load_resolution_cache(path: Path) -> dict[str, list[dict[str, str]]]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"warning: cache at {path} unreadable ({exc}); starting fresh", file=sys.stderr)
+        return {}
+
+
+def _save_resolution_cache(path: Path, cache: dict[str, list[dict[str, str]]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(cache, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
+
+
+def resolve_inputs_parallel(
+    raw_inputs: list[str],
+    *,
+    search_limit: int,
+    min_duration: float | None,
+    max_duration: float | None,
+    cache_path: Path,
+    workers: int,
+) -> list[tuple[str, str]]:
+    """Expand all inputs (with on-disk cache + thread parallelism) and return
+    the flat list of ``(url, title)`` tuples in the original input order.
+
+    A keyed sidecar JSON at ``cache_path`` skips any (raw, search_limit,
+    duration filters) tuple that already resolved on a previous run, so
+    interrupted sessions don't lose work and adding queries only resolves
+    the new ones.
+    """
+    cache = _load_resolution_cache(cache_path)
+    pending: list[tuple[int, str, str]] = []
+    cached_hits = 0
+    for idx, raw in enumerate(raw_inputs):
+        key = _resolution_cache_key(raw, search_limit, min_duration, max_duration)
+        if key in cache:
+            cached_hits += 1
+            continue
+        pending.append((idx, raw, key))
+
+    if cached_hits:
+        print(f"  cache hits: {cached_hits}/{len(raw_inputs)}")
+    if not pending:
+        print("  all queries already resolved")
+    else:
+        print(f"  resolving {len(pending)} new with {workers} parallel workers")
+
+    save_lock = threading.Lock()
+    save_every = 50
+
+    def _do(raw: str) -> list[tuple[str, str]]:
+        return expand_input(
+            raw,
+            search_limit,
+            min_duration=min_duration,
+            max_duration=max_duration,
+        )
+
+    completed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_meta = {
+            pool.submit(_do, raw): (idx, raw, key) for idx, raw, key in pending
+        }
+        for fut in concurrent.futures.as_completed(future_to_meta):
+            idx, raw, key = future_to_meta[fut]
+            try:
+                results = fut.result()
+            except Exception as exc:  # noqa: BLE001 — keep batch alive
+                print(f"  resolve failed: {raw!r}: {exc}", file=sys.stderr)
+                results = []
+            with save_lock:
+                cache[key] = [{"url": u, "title": t} for u, t in results]
+                completed += 1
+                if completed % save_every == 0:
+                    _save_resolution_cache(cache_path, cache)
+                    print(f"  resolved {completed}/{len(pending)}", flush=True)
+
+    if pending:
+        _save_resolution_cache(cache_path, cache)
+        print(f"  resolved {completed}/{len(pending)} (cache saved)")
+
+    flat: list[tuple[str, str]] = []
+    for raw in raw_inputs:
+        key = _resolution_cache_key(raw, search_limit, min_duration, max_duration)
+        for entry in cache.get(key, []):
+            flat.append((entry.get("url", ""), entry.get("title", "")))
+    return flat
+
+
 def collect_inputs(args: argparse.Namespace) -> list[str]:
     raw_inputs: list[str] = list(args.urls)
     for query in args.search:
@@ -848,6 +948,28 @@ def main() -> None:
         help="Stop after this many unique videos resolve from the inputs.",
     )
     parser.add_argument(
+        "--resolve-workers",
+        type=int,
+        default=8,
+        help="Parallel workers for the search-resolution phase (default: 8). "
+        "Each worker spawns its own yt-dlp subprocess; bigger values resolve "
+        "faster but risk hitting YouTube rate limits.",
+    )
+    parser.add_argument(
+        "--resolve-cache",
+        type=str,
+        default=None,
+        help="JSON cache for resolved URLs (default: <out_dir>/.resolved_urls.json). "
+        "Re-runs hit the cache for queries that haven't changed; only new / "
+        "modified queries hit the network. Set to '' to disable.",
+    )
+    parser.add_argument(
+        "--resolve-only",
+        action="store_true",
+        help="Only resolve queries to URLs (filling the cache); skip downloads. "
+        "Useful for splitting the slow expand phase from the slow download phase.",
+    )
+    parser.add_argument(
         "--min-duration",
         type=float,
         default=60.0,
@@ -902,39 +1024,60 @@ def main() -> None:
         if not raw_inputs:
             return
 
-    print(f"resolving {len(raw_inputs)} input(s)...")
     min_d = args.min_duration if args.min_duration > 0 else None
     max_d = args.max_duration if args.max_duration > 0 else None
+    if args.resolve_cache is None:
+        cache_path = out_dir / ".resolved_urls.json"
+    elif args.resolve_cache == "":
+        cache_path = None
+    else:
+        cache_path = Path(args.resolve_cache).resolve()
+
+    print(f"resolving {len(raw_inputs)} input(s)...")
+    if cache_path is not None:
+        print(f"  cache: {cache_path}")
+        flat_results = resolve_inputs_parallel(
+            raw_inputs,
+            search_limit=args.search_limit,
+            min_duration=min_d,
+            max_duration=max_d,
+            cache_path=cache_path,
+            workers=max(1, args.resolve_workers),
+        )
+    else:
+        # Sequential fallback when cache is explicitly disabled.
+        flat_results = []
+        for raw in raw_inputs:
+            flat_results.extend(
+                expand_input(raw, args.search_limit, min_duration=min_d, max_duration=max_d)
+            )
+
     seen_ids: set[str] = set()
     seen_titles: set[str] = set()
     title_dupes = 0
     urls: list[str] = []
-    for raw in raw_inputs:
-        for resolved_url, resolved_title in expand_input(
-            raw,
-            args.search_limit,
-            min_duration=min_d,
-            max_duration=max_d,
-        ):
-            vid = video_id_from_url(resolved_url)
-            if vid is None or vid in seen_ids:
-                continue
-            norm = normalize_title(resolved_title) if not args.allow_title_duplicates else ""
-            if norm and norm in seen_titles:
-                title_dupes += 1
-                continue
-            seen_ids.add(vid)
-            if norm:
-                seen_titles.add(norm)
-            urls.append(resolved_url)
-            if args.max_tracks is not None and len(urls) >= args.max_tracks:
-                break
+    for resolved_url, resolved_title in flat_results:
+        vid = video_id_from_url(resolved_url)
+        if vid is None or vid in seen_ids:
+            continue
+        norm = normalize_title(resolved_title) if not args.allow_title_duplicates else ""
+        if norm and norm in seen_titles:
+            title_dupes += 1
+            continue
+        seen_ids.add(vid)
+        if norm:
+            seen_titles.add(norm)
+        urls.append(resolved_url)
         if args.max_tracks is not None and len(urls) >= args.max_tracks:
             break
     print(
         f"resolved to {len(urls)} unique video(s); "
         f"deduped {title_dupes} title-duplicate re-upload(s)"
     )
+
+    if args.resolve_only:
+        print("--resolve-only set; cache populated, skipping downloads")
+        return
 
     counts = {"downloaded": 0, "skipped": 0, "failed": 0}
     for index, url in enumerate(urls, start=1):
