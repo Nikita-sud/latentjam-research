@@ -26,15 +26,14 @@ from student.data import DistillTargetDataset, collate_distill
 from student.device import resolve_torch_device
 from student.mel import LogMelExtractor
 from student.metrics import cosine_summary, topk_overlap
-from student.model import MelCnnStudent, count_parameters
+from student.model import build_student_from_config, count_parameters
 from student.teacher import ClapTeacher, load_clap_window
 from utils.wandb_log import log_metrics, log_summary, wandb_options, wandb_run
 
 
-def _load_checkpoint(path: Path, device: torch.device) -> MelCnnStudent:
+def _load_checkpoint(path: Path, device: torch.device) -> torch.nn.Module:
     ckpt = torch.load(path, map_location=device)
-    embedding_dim = int(ckpt.get("model_config", {}).get("embedding_dim", 512))
-    model = MelCnnStudent(embedding_dim=embedding_dim).to(device)
+    model = build_student_from_config(ckpt.get("model_config", {})).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
     return model
@@ -55,7 +54,7 @@ def _read_targets(path: Path, split: str, limit: int | None) -> pd.DataFrame:
 
 @torch.inference_mode()
 def _embed_student(
-    model: MelCnnStudent,
+    model: torch.nn.Module,
     mel: LogMelExtractor,
     loader: DataLoader,
     device: torch.device,
@@ -79,7 +78,7 @@ def _embed_student(
 
 @torch.inference_mode()
 def _latency_ms(
-    model: MelCnnStudent,
+    model: torch.nn.Module,
     mel: LogMelExtractor,
     loader: DataLoader,
     device: torch.device,

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -30,23 +31,45 @@ from student.config import MelConfig
 from student.data import load_fma_manifest
 from student.device import resolve_torch_device
 from student.mel import LogMelExtractor
-from student.model import MelCnnStudent, count_parameters
+from student.model import STUDENT_ARCH_CHOICES, build_student_model, count_parameters
 from student.projector import VICRegProjector
-from student.ssl_data import FmaSslDataset, cache_or_decode_clips, collate_ssl
+from student.ssl_data import (
+    FmaSslDataset,
+    cache_or_decode_clips,
+    collate_ssl,
+    seed_ssl_worker,
+)
 from student.ssl_loss import VICRegLoss
 from utils.wandb_log import log_metrics, log_summary, wandb_options, wandb_run
 
-SSL_MODEL_VERSION = "mel-cnn-vicreg@96mel-5s/512d/v1"
+SSL_MODEL_VERSION_BY_ARCH = {
+    "mel-cnn": "mel-cnn-vicreg@96mel-5s/512d/v1",
+    "passt-s": "passt-s-vicreg@96mel-5s/512d/v1",
+}
+
+
+def _ssl_model_version(student_arch: str) -> str:
+    return SSL_MODEL_VERSION_BY_ARCH.get(
+        student_arch, f"{student_arch}-vicreg@96mel-5s/512d/v1"
+    )
+
+
+def _autocast_context(device: torch.device, amp: str):
+    if amp == "bf16" and device.type == "cuda":
+        return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    return nullcontext()
 
 
 @torch.inference_mode()
 def evaluate(
-    student: MelCnnStudent,
+    student: nn.Module,
     mel: LogMelExtractor,
     projector: VICRegProjector,
     vicreg: VICRegLoss,
     val_loader: DataLoader,
     device: torch.device,
+    *,
+    amp: str,
 ) -> dict[str, Any]:
     student.eval()
     mel.eval()
@@ -60,21 +83,25 @@ def evaluate(
     covs: list[float] = []
 
     for v1, v2, lbls in val_loader:
-        v1 = v1.to(device)
-        v2 = v2.to(device)
+        v1 = v1.to(device, non_blocking=True)
+        v2 = v2.to(device, non_blocking=True)
         # No augmentation on val: deterministic, fair-comparison eval.
         m1 = mel(v1)
         m2 = mel(v2)
-        emb1 = student(m1)
-        emb2 = student(m2)
+        with _autocast_context(device, amp):
+            emb1 = student(m1)
+            emb2 = student(m2)
+            if emb1.shape[0] >= 2:
+                z1 = projector(emb1)
+                z2 = projector(emb2)
         if emb1.shape[0] >= 2:
-            z1 = projector(emb1)
-            z2 = projector(emb2)
-            loss, comps = vicreg(z1, z2)
+            loss, comps = vicreg(z1.float(), z2.float())
             losses.append(float(loss.detach().cpu()))
             sims.append(comps["sim"])
             stds.append(comps["std"])
             covs.append(comps["cov"])
+        emb1 = emb1.float()
+        emb2 = emb2.float()
         cos = nn.functional.cosine_similarity(emb1, emb2, dim=-1)
         view_cosines.extend(cos.cpu().tolist())
         embeds.append(emb1.cpu().numpy())
@@ -142,11 +169,31 @@ def _prepare_splits(
     default=Path("models/student/mel_cnn_ssl.pt"),
     show_default=True,
 )
+@click.option(
+    "--init-checkpoint",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Optional SSL checkpoint to initialize the student and projector before training.",
+)
 @click.option("--device", default="auto", show_default=True)
+@click.option(
+    "--student-arch",
+    type=click.Choice(STUDENT_ARCH_CHOICES, case_sensitive=False),
+    default="mel-cnn",
+    show_default=True,
+    help="Backbone encoder: mel-cnn baseline or passt-s (~7M PaSST-style transformer).",
+)
 @click.option("--epochs", type=int, default=30, show_default=True)
 @click.option("--batch-size", type=int, default=256, show_default=True)
 @click.option("--lr", type=float, default=1e-3, show_default=True)
 @click.option("--weight-decay", type=float, default=1e-4, show_default=True)
+@click.option(
+    "--amp",
+    type=click.Choice(["off", "bf16"], case_sensitive=False),
+    default="off",
+    show_default=True,
+    help="CUDA mixed precision mode. bf16 is recommended for A100 PaSST runs.",
+)
 @click.option("--decode-workers", type=int, default=12, show_default=True)
 @click.option(
     "--data-workers",
@@ -158,6 +205,13 @@ def _prepare_splits(
     "while augmenting + collating); 4-8 saturates an A100 with bs=512.",
 )
 @click.option(
+    "--prefetch-factor",
+    type=int,
+    default=4,
+    show_default=True,
+    help="DataLoader prefetch factor when --data-workers > 0.",
+)
+@click.option(
     "--cache-dir",
     type=click.Path(file_okay=False, path_type=Path),
     default=Path("models/cache/ssl_audio"),
@@ -166,6 +220,20 @@ def _prepare_splits(
 )
 @click.option("--projector-dim", type=int, default=2048, show_default=True)
 @click.option("--projector-hidden", type=int, default=2048, show_default=True)
+@click.option(
+    "--passt-patchout-freq",
+    type=int,
+    default=1,
+    show_default=True,
+    help="PaSST-only: number of frequency patch positions to drop during training.",
+)
+@click.option(
+    "--passt-patchout-time",
+    type=int,
+    default=3,
+    show_default=True,
+    help="PaSST-only: number of time patch positions to drop during training.",
+)
 @click.option("--sim-coef", type=float, default=25.0, show_default=True)
 @click.option("--std-coef", type=float, default=25.0, show_default=True)
 @click.option("--cov-coef", type=float, default=1.0, show_default=True)
@@ -188,16 +256,22 @@ def main(
     metadata_root: Path,
     subset: str,
     out_path: Path,
+    init_checkpoint: Path | None,
     device: str,
+    student_arch: str,
     epochs: int,
     batch_size: int,
     lr: float,
     weight_decay: float,
+    amp: str,
     decode_workers: int,
     data_workers: int,
+    prefetch_factor: int,
     cache_dir: Path | None,
     projector_dim: int,
     projector_hidden: int,
+    passt_patchout_freq: int,
+    passt_patchout_time: int,
     sim_coef: float,
     std_coef: float,
     cov_coef: float,
@@ -215,6 +289,8 @@ def main(
 ) -> None:
     torch.manual_seed(seed)
     np.random.seed(seed)
+    student_arch = student_arch.lower()
+    amp = amp.lower()
 
     manifest = load_fma_manifest(
         audio_root, metadata_root, subset=subset.lower(), existing_only=True
@@ -231,7 +307,7 @@ def main(
         f"manifest: {len(manifest)} tracks; train={len(train_mfst)}, val={len(val_mfst)}"
     )
 
-    cache_target = cache_dir if cache_dir and str(cache_dir) else None
+    cache_target = cache_dir if cache_dir and str(cache_dir) not in {"", "."} else None
     train_clips = cache_or_decode_clips(
         train_mfst,
         cache_dir=cache_target,
@@ -272,37 +348,60 @@ def main(
         torch_device = resolve_torch_device(device)
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
+    if amp == "bf16" and torch_device.type != "cuda":
+        raise click.ClickException("--amp bf16 requires --device cuda or a CUDA-capable auto device")
+    if amp == "bf16" and not torch.cuda.is_bf16_supported():
+        raise click.ClickException("CUDA device does not report bfloat16 support")
+    if torch_device.type == "cuda":
+        torch.set_float32_matmul_precision("high")
 
     pin_memory = torch_device.type == "cuda"
     persistent = data_workers > 0
+    loader_kwargs: dict[str, Any] = {
+        "num_workers": data_workers,
+        "collate_fn": collate_ssl,
+        "worker_init_fn": seed_ssl_worker,
+        "pin_memory": pin_memory,
+        "persistent_workers": persistent,
+    }
+    if data_workers > 0:
+        loader_kwargs["prefetch_factor"] = max(1, prefetch_factor)
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=data_workers,
-        collate_fn=collate_ssl,
         drop_last=True,
-        pin_memory=pin_memory,
-        persistent_workers=persistent,
+        **loader_kwargs,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=min(batch_size, max(2, len(val_ds))),
         shuffle=False,
-        num_workers=data_workers,
-        collate_fn=collate_ssl,
-        pin_memory=pin_memory,
-        persistent_workers=persistent,
+        **loader_kwargs,
     )
 
     mel_config = MelConfig()
     mel = LogMelExtractor(mel_config).to(torch_device)
-    student = MelCnnStudent().to(torch_device)
+    student = build_student_model(
+        student_arch,
+        passt_patchout_freq=passt_patchout_freq,
+        passt_patchout_time=passt_patchout_time,
+    ).to(torch_device)
     projector = VICRegProjector(
         in_dim=student.embedding_dim,
         hidden_dim=projector_hidden,
         out_dim=projector_dim,
     ).to(torch_device)
+    if init_checkpoint is not None:
+        init_state = torch.load(init_checkpoint, map_location=torch_device)
+        try:
+            student.load_state_dict(init_state["model_state_dict"])
+            projector.load_state_dict(init_state["projector_state_dict"])
+        except RuntimeError as exc:
+            raise click.ClickException(
+                f"failed to initialize from {init_checkpoint}: {exc}"
+            ) from exc
+        click.echo(f"[init] loaded student + projector from {init_checkpoint}")
     spec_aug = SpecAugment(
         freq_masks=freq_masks, time_masks=time_masks
     ).to(torch_device)
@@ -323,9 +422,12 @@ def main(
         div_factor=25.0,
         final_div_factor=100.0,
     )
+    model_version = _ssl_model_version(student_arch)
 
     config: dict[str, Any] = {
-        "model_version": SSL_MODEL_VERSION,
+        "model_version": model_version,
+        "student_arch": student_arch,
+        "init_checkpoint": str(init_checkpoint) if init_checkpoint is not None else None,
         "n_train_tracks": int(len(train_mfst)),
         "n_val_tracks": int(len(val_mfst)),
         "n_train_samples": int(len(train_ds)),
@@ -334,8 +436,11 @@ def main(
         "batch_size": int(batch_size),
         "lr": float(lr),
         "weight_decay": float(weight_decay),
+        "amp": amp,
         "projector_dim": int(projector_dim),
         "projector_hidden": int(projector_hidden),
+        "passt_patchout_freq": int(passt_patchout_freq),
+        "passt_patchout_time": int(passt_patchout_time),
         "sim_coef": float(sim_coef),
         "std_coef": float(std_coef),
         "cov_coef": float(cov_coef),
@@ -346,6 +451,8 @@ def main(
         "freq_masks": int(freq_masks),
         "time_masks": int(time_masks),
         "decode_workers": int(decode_workers),
+        "data_workers": int(data_workers),
+        "prefetch_factor": int(prefetch_factor),
         "requested_device": device,
         "device": str(torch_device),
         "model": student.config_dict(),
@@ -386,15 +493,17 @@ def main(
                 v1 = random_polarity(v1, p=polarity_flip_prob)
                 v2 = random_polarity(v2, p=polarity_flip_prob)
 
-                m1 = spec_aug(mel(v1))
-                m2 = spec_aug(mel(v2))
+                m1 = mel(v1)
+                m2 = mel(v2)
+                with _autocast_context(torch_device, amp):
+                    m1 = spec_aug(m1)
+                    m2 = spec_aug(m2)
+                    emb1 = student(m1)
+                    emb2 = student(m2)
+                    z1 = projector(emb1)
+                    z2 = projector(emb2)
 
-                emb1 = student(m1)
-                emb2 = student(m2)
-                z1 = projector(emb1)
-                z2 = projector(emb2)
-
-                loss, comps = vicreg(z1, z2)
+                loss, comps = vicreg(z1.float(), z2.float())
 
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
@@ -406,11 +515,13 @@ def main(
                 std_terms.append(comps["std"])
                 cov_terms.append(comps["cov"])
                 cos = nn.functional.cosine_similarity(
-                    emb1.detach(), emb2.detach(), dim=-1
+                    emb1.detach().float(), emb2.detach().float(), dim=-1
                 ).mean()
                 train_view_cosines.append(float(cos.cpu()))
 
-            val_metrics = evaluate(student, mel, projector, vicreg, val_loader, torch_device)
+            val_metrics = evaluate(
+                student, mel, projector, vicreg, val_loader, torch_device, amp=amp
+            )
 
             epoch_metrics: dict[str, Any] = {
                 "epoch": epoch,
@@ -432,7 +543,7 @@ def main(
                 best_report = {"epoch": epoch, **val_metrics}
                 torch.save(
                     {
-                        "model_version": SSL_MODEL_VERSION,
+                        "model_version": model_version,
                         "model_state_dict": student.state_dict(),
                         "projector_state_dict": projector.state_dict(),
                         "model_config": student.config_dict(),
@@ -455,7 +566,7 @@ def main(
 
     report = {
         "checkpoint": str(out_path),
-        "model_version": SSL_MODEL_VERSION,
+        "model_version": model_version,
         "parameters": count_parameters(student),
         "projector_parameters": count_parameters(projector),
         "best": best_report,

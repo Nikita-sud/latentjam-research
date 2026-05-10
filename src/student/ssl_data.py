@@ -26,7 +26,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, get_worker_info
 from tqdm import tqdm
 
 from student.config import TARGET_SR, WINDOW_SAMPLES
@@ -281,6 +281,10 @@ class FmaSslDataset(Dataset):
             len(idxs) for idxs in self._artist_to_idxs.values() if len(idxs) > 1
         )
 
+    def reseed(self, seed: int) -> None:
+        """Reset the per-process RNG used for crop and artist-positive sampling."""
+        self._rng = np.random.default_rng(seed)
+
     def __len__(self) -> int:
         return len(self.valid_idxs)
 
@@ -336,3 +340,13 @@ def collate_ssl(
 ) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
     v1, v2, labels = zip(*batch, strict=True)
     return torch.stack(list(v1), dim=0), torch.stack(list(v2), dim=0), list(labels)
+
+
+def seed_ssl_worker(_worker_id: int) -> None:
+    """Give each DataLoader worker's dataset copy a distinct numpy RNG seed."""
+    worker = get_worker_info()
+    if worker is None:
+        return
+    dataset = worker.dataset
+    if hasattr(dataset, "reseed"):
+        dataset.reseed(torch.initial_seed() % (2**32))

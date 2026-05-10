@@ -9,7 +9,12 @@ from student.data import DistillTargetDataset, window_starts
 from student.device import resolve_torch_device
 from student.mel import LogMelExtractor, ensure_window_length
 from student.metrics import topk_overlap
-from student.model import MelCnnStudent, count_parameters
+from student.model import (
+    MelCnnStudent,
+    PaSSTSmallStudent,
+    build_student_from_config,
+    count_parameters,
+)
 
 
 def test_student_model_shape_norm_and_param_budget() -> None:
@@ -22,6 +27,26 @@ def test_student_model_shape_norm_and_param_budget() -> None:
     assert y.shape == (2, 512)
     norms = y.norm(dim=-1)
     torch.testing.assert_close(norms, torch.ones_like(norms), atol=1e-5, rtol=1e-5)
+
+
+def test_passt_small_model_shape_norm_and_param_budget() -> None:
+    model = PaSSTSmallStudent()
+    n_params = count_parameters(model)
+    assert STUDENT_PARAM_MIN <= n_params <= STUDENT_PARAM_MAX
+
+    x = torch.randn(2, 1, 96, 251)
+    y = model(x)
+    assert y.shape == (2, 512)
+    norms = y.norm(dim=-1)
+    torch.testing.assert_close(norms, torch.ones_like(norms), atol=1e-5, rtol=1e-5)
+
+
+def test_build_student_from_passt_config() -> None:
+    model = PaSSTSmallStudent(patchout_freq=0, patchout_time=0)
+    rebuilt = build_student_from_config(model.config_dict())
+    assert isinstance(rebuilt, PaSSTSmallStudent)
+    assert rebuilt.patchout_freq == 0
+    assert rebuilt.patchout_time == 0
 
 
 def test_log_mel_extractor_shape() -> None:

@@ -40,3 +40,4 @@ wandb/
 
 # macOS Finder metadata
 .DS_Store
+scripts/yt_cookies.txt
