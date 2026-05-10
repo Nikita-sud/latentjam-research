@@ -33,23 +33,27 @@ def load_fma_manifest(
     if not csv_path.exists():
         raise FileNotFoundError(f"FMA tracks.csv not found at {csv_path}")
 
-    tracks = pd.read_csv(csv_path, index_col=0, header=[0, 1])
+    tracks = pd.read_csv(csv_path, index_col=0, header=[0, 1], low_memory=False)
     split_col = ("set", "split")
     split = tracks[split_col] if split_col in tracks.columns else "training"
-    artist_id_col = ("artist", "id")
-    artist_name_col = ("artist", "name")
+
+    def _opt(col: tuple[str, str]):
+        return tracks[col] if col in tracks.columns else None
+
     df = pd.DataFrame(
         {
             "fma_track_id": tracks.index.astype(int),
             "subset": tracks[("set", "subset")],
             "split": split,
             "genre_top": tracks[("track", "genre_top")],
-            "artist_id": tracks[artist_id_col]
-            if artist_id_col in tracks.columns
-            else None,
-            "artist_name": tracks[artist_name_col]
-            if artist_name_col in tracks.columns
-            else None,
+            "artist_id": _opt(("artist", "id")),
+            "artist_name": _opt(("artist", "name")),
+            # session-context fields (added for predictor / album sessions)
+            "album_id": _opt(("album", "id")),
+            "album_title": _opt(("album", "title")),
+            "album_date_released": _opt(("album", "date_released")),
+            "track_title": _opt(("track", "title")),
+            "track_number": _opt(("track", "number")),
         }
     )
     df = df[df["subset"].isin(_subset_levels(subset))]

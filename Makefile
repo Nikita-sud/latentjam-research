@@ -1,4 +1,4 @@
-.PHONY: install install-dev install-train lint format test test-slow embed recommend export quantize verify bench eval download-fma download-mtat download-clap-music distill-cache distill-train student-benchmark student-embed student-export student-quantize clean
+.PHONY: install install-dev install-train lint format test test-slow embed recommend export quantize verify bench eval download-fma download-mtat download-clap-music distill-cache distill-train student-benchmark student-embed student-export student-quantize build-fma-store train-predictor recommend-session clean
 
 PYTHON ?= python
 ONNX_FP32 ?= models/onnx/mert_v1_95m_5s.onnx
@@ -136,6 +136,45 @@ student-export:
 
 student-quantize:
 	$(PYTHON) -m conversion.quantize --in "$(STUDENT_ONNX_FP32)" --out "$(STUDENT_ONNX_INT8)"
+
+build-fma-store:
+	@if [ -z "$(STUDENT_CKPT)" ] || [ -z "$(OUT)" ]; then \
+		echo "Usage: make build-fma-store STUDENT_CKPT=<ckpt.pt> OUT=<store.parquet> [SUBSET=medium] [DEVICE=mps]"; exit 2; \
+	fi
+	$(PYTHON) scripts/build_fma_store.py \
+		--audio-root "$${AUDIO_ROOT:-data/raw/fma_medium}" \
+		--metadata-root "$${METADATA_ROOT:-data/raw/fma_metadata}" \
+		--subset $${SUBSET:-medium} \
+		--checkpoint "$(STUDENT_CKPT)" \
+		--out "$(OUT)" \
+		--device $${DEVICE:-auto} \
+		--batch-size $${BATCH:-32} \
+		--num-workers $${WORKERS:-8} \
+		$${LIMIT:+--limit $$LIMIT}
+
+train-predictor:
+	@if [ -z "$(STORE)" ] || [ -z "$(OUT)" ]; then \
+		echo "Usage: make train-predictor STORE=<store.parquet> OUT=<predictor.pt> [EPOCHS=30] [DEVICE=mps]"; exit 2; \
+	fi
+	$(PYTHON) -m predictor.sequence \
+		--store "$(STORE)" \
+		--extras "$(STORE:.parquet=.extras.parquet)" \
+		--out "$(OUT)" \
+		--context-k $${K:-4} \
+		--epochs $${EPOCHS:-30} \
+		--batch-size $${BATCH:-256} \
+		--lr $${LR:-3e-4} \
+		--device $${DEVICE:-auto}
+
+recommend-session:
+	@if [ -z "$(STORE)" ] || [ -z "$(PREDICTOR)" ] || [ -z "$(SEEDS)" ]; then \
+		echo "Usage: make recommend-session STORE=<store.parquet> PREDICTOR=<pred.pt> SEEDS=<id1,id2,...> [K=10]"; exit 2; \
+	fi
+	$(PYTHON) -m predictor.cli recommend-session \
+		--store "$(STORE)" \
+		--predictor "$(PREDICTOR)" \
+		$$(echo "$(SEEDS)" | tr ',' '\n' | sed 's/^/--seed-id /' | tr '\n' ' ') \
+		-k $${K:-10}
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache **/__pycache__
