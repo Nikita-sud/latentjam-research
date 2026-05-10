@@ -83,6 +83,20 @@ distill-cache:
 		$${WANDB_PROJECT:+--wandb-project $$WANDB_PROJECT} \
 		--wandb-tag dataset:fma-small --wandb-tag teacher:laion-clap-music
 
+panns-cache:
+	$(PYTHON) scripts/prepare_panns_targets.py \
+		--audio-root "$${AUDIO_ROOT:-data/raw/fma_medium}" \
+		--metadata-root "$${METADATA_ROOT:-data/raw/fma_metadata}" \
+		--subset $${SUBSET:-medium} \
+		--out "$${PANNS_TARGETS:-models/student/fma_$${SUBSET:-medium}_panns_targets.parquet}" \
+		--device $${DEVICE:-auto} \
+		--batch-size $${BATCH:-64} \
+		--num-workers $${WORKERS:-8} \
+		--windows-per-track $${WINDOWS:-1} \
+		$${LIMIT:+--limit $$LIMIT} \
+		$${WANDB_PROJECT:+--wandb-project $$WANDB_PROJECT} \
+		--wandb-tag teacher:panns-cnn14
+
 distill-train:
 	$(PYTHON) -m student.train_distill \
 		--targets "$(FMA_TARGETS)" \

@@ -49,6 +49,12 @@ train = [
   "torchvision>=0.21,<1",
   "wandb>=0.16,<1",
 ]
+panns = [
+  # PANNs CNN14 — Apache-2.0 audio teacher pretrained on AudioSet (5000 h).
+  # Licensing-friendly alternative to LAION-CLAP-music for the GPL-3 app.
+  "panns_inference>=0.1.0,<1",
+  "librosa>=0.10,<1",
+]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
