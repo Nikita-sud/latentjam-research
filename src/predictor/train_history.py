@@ -72,12 +72,18 @@ def _time_features(ts_unix_ms: float) -> np.ndarray:
 
 @dataclass
 class TrainPair:
-    history_small: np.ndarray  # (K, D)
+    history_small: np.ndarray  # (K, D+1) — last col is played_pct in [0, 1]
     history_medium: np.ndarray  # (D,)
     history_large: np.ndarray   # (D,)
     time_feat: np.ndarray       # (5,)
-    session_feat: np.ndarray    # (4,)
+    session_feat: np.ndarray    # (5,) — last is mean_played_pct
     target: np.ndarray          # (D,)
+
+
+def _played_pct(played_seconds: float, duration_s: float) -> float:
+    if duration_s <= 0:
+        return 0.0
+    return float(np.clip(played_seconds / duration_s, 0.0, 1.0))
 
 
 def _build_pairs_for_user(
@@ -106,19 +112,20 @@ def _build_pairs_for_user(
     user_events = user_events.sort_values("ts_unix_ms").reset_index(drop=True)
     pairs: list[TrainPair] = []
 
-    # Streaming centroids:
-    medium_acc = np.zeros(matrix.shape[1], dtype=np.float64)  # exp-weighted
+    # Streaming centroids (now weighted by played_pct rather than binary
+    # completion -- a 95 %-listened track contributes more than a 60 %-one):
+    medium_acc = np.zeros(matrix.shape[1], dtype=np.float64)
     medium_w = 0.0
     large_acc = np.zeros(matrix.shape[1], dtype=np.float64)
     large_w = 0.0
     last_event_ts_by_session: dict[str, float] = {}
-    completion_window: list[int] = []  # last 10 (1=completed, 0=skipped)
-    session_completed_history: dict[str, list[int]] = {}  # by session_id
+    played_pct_window: list[float] = []   # last 10 played_pct values
+    session_played_pct_history: dict[str, list[float]] = {}
     session_start_ms: dict[str, float] = {}
     last_skipped: int = 0
 
-    # Per-session list of completed track rows in order (used for history_small).
-    session_history: dict[str, list[int]] = {}
+    # Per-session list of (row, played_pct) in order (used for history_small).
+    session_history: dict[str, list[tuple[int, float]]] = {}
 
     for _, row in user_events.iterrows():
         track_id = row["track_id"]
@@ -129,34 +136,41 @@ def _build_pairs_for_user(
 
         ts = float(row["ts_unix_ms"])
         sid = str(row["session_id"])
+        played_seconds = float(row.get("played_seconds", 0.0))
+        track_dur = float(row.get("track_duration_s", 0.0))
+        played_pct = _played_pct(played_seconds, track_dur)
         completed = int(row["completed"]) == 1
         skipped = int(row["skipped"]) == 1
 
         sess_hist = session_history.get(sid, [])
-        sess_completed_window = session_completed_history.get(sid, [])
+        sess_pct_window = session_played_pct_history.get(sid, [])
         if sid not in session_start_ms:
             session_start_ms[sid] = ts
 
-        # Build history_small: last K completed in session.
-        h_small = np.zeros((context_k, matrix.shape[1]), dtype=np.float32)
+        # Build history_small (K, D+1): last K tracks in session with played_pct
+        # as the extra channel. We include skipped tracks too — the gate value
+        # tells the model "this didn't land".
+        h_small = np.zeros((context_k, matrix.shape[1] + 1), dtype=np.float32)
         recent = sess_hist[-context_k:]
         if recent:
-            stacked = np.stack([matrix[r] for r in recent], axis=0)
-            h_small[-len(recent) :] = stacked
-            # Pad missing slots with the earliest known recent (so position emb
-            # still has structure rather than zero rows).
+            stacked = np.stack([matrix[r] for r, _pct in recent], axis=0)
+            pcts = np.asarray([pct for _r, pct in recent], dtype=np.float32)
+            h_small[-len(recent) :, : matrix.shape[1]] = stacked
+            h_small[-len(recent) :, matrix.shape[1]] = pcts
+            # Pad with the earliest recent so position embedding still
+            # discriminates rather than zero rows.
             if len(recent) < context_k:
-                h_small[: context_k - len(recent)] = stacked[0]
+                h_small[: context_k - len(recent), : matrix.shape[1]] = stacked[0]
+                h_small[: context_k - len(recent), matrix.shape[1]] = pcts[0]
         else:
-            # No prior in session — use medium centroid as cold-start, falling
-            # back to target_emb as a *very* last resort (only happens for the
-            # very first event of the very first session of the user).
             if medium_w > 0:
                 base = (medium_acc / medium_w).astype(np.float32)
                 base = base / (np.linalg.norm(base) + 1e-12)
-                h_small[:] = base
+                h_small[:, : matrix.shape[1]] = base
+                h_small[:, matrix.shape[1]] = 0.5  # uncertain played_pct
             else:
-                h_small[:] = target_emb
+                h_small[:, : matrix.shape[1]] = target_emb
+                h_small[:, matrix.shape[1]] = 0.5
 
         # history_medium / history_large from streaming centroids.
         if medium_w > 0:
@@ -176,10 +190,17 @@ def _build_pairs_for_user(
 
         session_pos = len(sess_hist)
         time_since_session_min = (ts - session_start_ms[sid]) / 60_000.0
-        if sess_completed_window:
-            comp_rate = float(np.mean(sess_completed_window))
-        elif completion_window:
-            comp_rate = float(np.mean(completion_window))
+        if sess_pct_window:
+            mean_pct = float(np.mean(sess_pct_window))
+        elif played_pct_window:
+            mean_pct = float(np.mean(played_pct_window))
+        else:
+            mean_pct = 0.5
+        # binary completion-rate retained for backwards comparison (>=80%)
+        if sess_pct_window:
+            comp_rate = float(np.mean([1.0 if v >= 0.8 else 0.0 for v in sess_pct_window]))
+        elif played_pct_window:
+            comp_rate = float(np.mean([1.0 if v >= 0.8 else 0.0 for v in played_pct_window]))
         else:
             comp_rate = 0.5
 
@@ -189,6 +210,7 @@ def _build_pairs_for_user(
                 float(last_skipped),
                 math.log1p(max(0.0, time_since_session_min)),
                 comp_rate,
+                mean_pct,
             ],
             dtype=np.float32,
         )
@@ -207,36 +229,42 @@ def _build_pairs_for_user(
             )
 
         # Update streaming state AFTER emitting the pair (so next pair sees
-        # this event's contribution).
-        if completed:
-            # Decay medium / large to roughly [0, 30 days] -- per-event decay
-            # by Δt since previous event.
-            prev_ts = last_event_ts_by_session.get("__GLOBAL__", ts)
-            dt_days = max(0.0, (ts - prev_ts) / (24.0 * 3600.0 * 1000.0))
-            medium_decay = math.exp(-dt_days * math.log(2) / EXP_DECAY_MEDIUM_DAYS)
-            large_decay = math.exp(-dt_days * math.log(2) / EXP_DECAY_LARGE_DAYS)
-            medium_acc *= medium_decay
-            medium_w *= medium_decay
-            large_acc *= large_decay
-            large_w *= large_decay
-            last_event_ts_by_session["__GLOBAL__"] = ts
+        # this event's contribution). Now we *always* update history_small
+        # (so skipped tracks still appear in the K-window with low pct), and
+        # weight medium/large centroids by played_pct rather than binary
+        # completion -- a 95 %-listened track contributes more than a 60 %-
+        # one, and a skipped track still moves the centroid slightly.
+        prev_ts = last_event_ts_by_session.get("__GLOBAL__", ts)
+        dt_days = max(0.0, (ts - prev_ts) / (24.0 * 3600.0 * 1000.0))
+        medium_decay = math.exp(-dt_days * math.log(2) / EXP_DECAY_MEDIUM_DAYS)
+        large_decay = math.exp(-dt_days * math.log(2) / EXP_DECAY_LARGE_DAYS)
+        medium_acc *= medium_decay
+        medium_w *= medium_decay
+        large_acc *= large_decay
+        large_w *= large_decay
+        last_event_ts_by_session["__GLOBAL__"] = ts
 
-            medium_acc += target_emb.astype(np.float64)
-            medium_w += 1.0
-            large_acc += target_emb.astype(np.float64)
-            large_w += 1.0
-            sess_hist.append(target_row)
-            session_history[sid] = sess_hist
+        # Reward-shaped weight in [0, 1]: skip (pct < 0.2) contributes ~0,
+        # half-listened (~0.5) contributes 0.6, completed (>=0.8) contributes 1.0.
+        weight = float(np.clip((played_pct - 0.2) / 0.6, 0.0, 1.0))
+        if weight > 0:
+            medium_acc += weight * target_emb.astype(np.float64)
+            medium_w += weight
+            large_acc += weight * target_emb.astype(np.float64)
+            large_w += weight
+
+        sess_hist.append((target_row, played_pct))
+        session_history[sid] = sess_hist
 
         comp_window_window_size = 10
-        sess_completed_window.append(int(completed))
-        if len(sess_completed_window) > comp_window_window_size:
-            sess_completed_window.pop(0)
-        session_completed_history[sid] = sess_completed_window
+        sess_pct_window.append(played_pct)
+        if len(sess_pct_window) > comp_window_window_size:
+            sess_pct_window.pop(0)
+        session_played_pct_history[sid] = sess_pct_window
 
-        completion_window.append(int(completed))
-        if len(completion_window) > 50:
-            completion_window.pop(0)
+        played_pct_window.append(played_pct)
+        if len(played_pct_window) > 50:
+            played_pct_window.pop(0)
 
         last_skipped = int(skipped)
         last_event_ts_by_session[sid] = ts
@@ -251,16 +279,18 @@ def _build_pairs_for_user(
 
 class HistoryEventDataset(Dataset):
     def __init__(self, pairs: list[TrainPair]):
-        # Pre-stack into arrays for speed.
+        # Pre-stack into arrays for speed. history_small is (K, D+1), but the
+        # centroids and target are pure D-dim embeddings.
         n = len(pairs)
-        d = pairs[0].history_small.shape[1]
+        d_small = pairs[0].history_small.shape[1]   # D+1 when use_played_pct
+        d_emb = pairs[0].history_medium.shape[0]    # D
         k = pairs[0].history_small.shape[0]
-        self.h_small = np.empty((n, k, d), dtype=np.float32)
-        self.h_med = np.empty((n, d), dtype=np.float32)
-        self.h_lg = np.empty((n, d), dtype=np.float32)
+        self.h_small = np.empty((n, k, d_small), dtype=np.float32)
+        self.h_med = np.empty((n, d_emb), dtype=np.float32)
+        self.h_lg = np.empty((n, d_emb), dtype=np.float32)
         self.tf = np.empty((n, pairs[0].time_feat.shape[0]), dtype=np.float32)
         self.sf = np.empty((n, pairs[0].session_feat.shape[0]), dtype=np.float32)
-        self.tgt = np.empty((n, d), dtype=np.float32)
+        self.tgt = np.empty((n, d_emb), dtype=np.float32)
         for i, p in enumerate(pairs):
             self.h_small[i] = p.history_small
             self.h_med[i] = p.history_medium
@@ -441,7 +471,16 @@ def evaluate(
 
 
 def _baseline_query(p: TrainPair, *, w_small: float, w_med: float, w_lg: float) -> np.ndarray:
-    small_centroid = p.history_small.mean(axis=0)
+    # history_small now has shape (K, D+1) — last col is played_pct, drop it
+    # for the cosine baseline. We also use played_pct as a per-track weight so
+    # skipped tracks don't pollute the small centroid.
+    embeds = p.history_small[:, : p.history_medium.shape[0]]
+    pct = p.history_small[:, p.history_medium.shape[0]]
+    weights = np.clip((pct - 0.2) / 0.6, 0.0, 1.0).astype(np.float32)
+    if weights.sum() > 1e-6:
+        small_centroid = (embeds * weights[:, None]).sum(axis=0) / (weights.sum() + 1e-12)
+    else:
+        small_centroid = embeds.mean(axis=0)
     small_centroid = small_centroid / (np.linalg.norm(small_centroid) + 1e-12)
     q = w_small * small_centroid + w_med * p.history_medium + w_lg * p.history_large
     return q / (np.linalg.norm(q) + 1e-12)

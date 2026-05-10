@@ -56,10 +56,11 @@ class HistoryPredictorConfig:
     transformer_ff: int = 1024
     fuse_hidden: int = 1024
     time_feat_dim: int = 5
-    session_feat_dim: int = 4
+    session_feat_dim: int = 5  # add mean_played_pct as 5th session feature
     aux_hidden: int = 64
     dropout: float = 0.1
     residual_scale: float = 0.4
+    use_played_pct: bool = True  # per-track played_pct in history_small via input proj
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -74,6 +75,7 @@ class HistoryPredictorConfig:
             "aux_hidden": self.aux_hidden,
             "dropout": self.dropout,
             "residual_scale": self.residual_scale,
+            "use_played_pct": self.use_played_pct,
             "predictor_version": HISTORY_PREDICTOR_VERSION,
         }
 
@@ -87,6 +89,14 @@ class HistoryAwarePredictor(nn.Module):
 
         # Position embeddings for the K-track small history.
         self.position = nn.Embedding(cfg.context_k, d)
+
+        # Optional input projection: history_small per-token has D + 1 features
+        # (track embedding + played_pct). Project back to D before the
+        # Transformer so the encoder dim stays consistent.
+        if cfg.use_played_pct:
+            self.token_in_proj: nn.Module = nn.Linear(d + 1, d)
+        else:
+            self.token_in_proj = nn.Identity()
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d,
@@ -140,20 +150,26 @@ class HistoryAwarePredictor(nn.Module):
 
     def forward(
         self,
-        history_small: torch.Tensor,   # (B, K, D)
+        history_small: torch.Tensor,   # (B, K, D) or (B, K, D+1) when use_played_pct
         history_medium: torch.Tensor,  # (B, D)
         history_large: torch.Tensor,   # (B, D)
         time_features: torch.Tensor,   # (B, time_feat_dim)
         session_features: torch.Tensor,  # (B, session_feat_dim)
     ) -> torch.Tensor:
-        b, k, d = history_small.shape
-        assert k == self.cfg.context_k and d == self.cfg.embedding_dim
+        b, k, d_in = history_small.shape
+        expected = self.cfg.embedding_dim + (1 if self.cfg.use_played_pct else 0)
+        assert k == self.cfg.context_k and d_in == expected, (
+            f"history_small last dim {d_in}, expected {expected} "
+            f"(use_played_pct={self.cfg.use_played_pct})"
+        )
 
+        # Project (D+1) -> D when played_pct is included.
+        h_small = self.token_in_proj(history_small)     # (B, K, D)
         positions = torch.arange(k, device=history_small.device)
         pos_emb = self.position(positions)[None, :, :]
-        h_small = history_small + pos_emb
-        h_small = self.h_small_enc(h_small)         # (B, K, D)
-        h_small_pool = h_small.mean(dim=1)          # (B, D)
+        h_small = h_small + pos_emb
+        h_small = self.h_small_enc(h_small)             # (B, K, D)
+        h_small_pool = h_small.mean(dim=1)              # (B, D)
 
         h_med = self.h_medium_proj(history_medium)  # (B, D)
         h_lg = self.h_large_proj(history_large)     # (B, D)

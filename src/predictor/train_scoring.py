@@ -204,6 +204,22 @@ def evaluate_centroid_baseline(
     show_default=True,
     help="Negatives per training row for the listwise scoring loss.",
 )
+@click.option(
+    "--hard-negative-frac",
+    type=float,
+    default=0.5,
+    show_default=True,
+    help="After warmup, fraction of negatives drawn from top-K of the "
+    "two-tower head (hard negatives) rather than random. Set to 0 to disable.",
+)
+@click.option(
+    "--hard-negative-warmup-epochs",
+    type=int,
+    default=3,
+    show_default=True,
+    help="First N epochs use 100 %% random negatives so the scorer doesn't "
+    "collapse before the state encoder converges.",
+)
 @click.option("--val-frac-users", type=float, default=0.15, show_default=True)
 @click.option("--device", default="auto", show_default=True)
 @click.option("--seed", type=int, default=0, show_default=True)
@@ -219,6 +235,8 @@ def main(
     cosine_weight: float,
     scoring_weight: float,
     n_train_negatives: int,
+    hard_negative_frac: float,
+    hard_negative_warmup_epochs: int,
     val_frac_users: float,
     device: str,
     seed: int,
@@ -321,10 +339,46 @@ def main(
             nce = info_nce(state, tgt, temperature=temperature)
             cos_pos = (state * tgt).sum(dim=-1).mean()
 
-            # Listwise scoring head: 1 positive + N random negatives per row.
+            # Listwise scoring head: 1 positive + N negatives per row.
+            # Composition: random + (after warmup) top-K from the two-tower
+            # head as hard negatives. Hard negatives force the scorer to
+            # discriminate between "almost right" and "right" rather than
+            # "easy random track" vs "right".
             B = state.size(0)
-            neg_rows = rng_train.integers(0, n_pool, size=(B, n_train_negatives))
-            neg_emb = pool_t[neg_rows.flatten()].view(B, n_train_negatives, -1)
+            use_hard = epoch > hard_negative_warmup_epochs and hard_negative_frac > 0
+            n_hard = int(round(n_train_negatives * hard_negative_frac)) if use_hard else 0
+            n_random = n_train_negatives - n_hard
+
+            neg_emb_parts: list[torch.Tensor] = []
+            if n_random > 0:
+                rand_rows = rng_train.integers(0, n_pool, size=(B, n_random))
+                neg_emb_parts.append(pool_t[rand_rows.flatten()].view(B, n_random, -1))
+            if n_hard > 0:
+                # Cosine scores of state vs full library, mask out "exact target"
+                # so we never sample the positive as a hard negative.
+                with torch.no_grad():
+                    sim = state @ pool_t.T                               # (B, N_pool)
+                    # Find each row's target index by argmax against tgt;
+                    # fall back to similarity to tgt as identifier.
+                    target_sim = (state * tgt).sum(dim=-1, keepdim=True)  # (B, 1)
+                    # Mark target-row(s) — approx by setting top-1 row to -inf if
+                    # its embedding equals target. Equivalent: subtract a peak
+                    # at the closest-to-tgt row.
+                    tgt_sim_all = pool_t @ tgt.T                           # (N_pool, B)
+                    tgt_rows = tgt_sim_all.argmax(dim=0)                   # (B,)
+                    sim.scatter_(1, tgt_rows.unsqueeze(1), float("-inf"))
+                    # top-k over a wider pool than we need so sampling has variety
+                    pool_size = max(n_hard * 4, 50)
+                    _, top_idx = sim.topk(pool_size, dim=1)                # (B, pool_size)
+                    # uniformly sample n_hard from the pool per row
+                    rand_pick = torch.randint(
+                        0, pool_size, (B, n_hard), device=torch_device
+                    )
+                    hard_rows = top_idx.gather(1, rand_pick)               # (B, n_hard)
+                    hard_emb = pool_t[hard_rows.flatten()].view(B, n_hard, -1)
+                neg_emb_parts.append(hard_emb)
+
+            neg_emb = torch.cat(neg_emb_parts, dim=1)
             cand_emb = torch.cat([tgt.unsqueeze(1), neg_emb], dim=1)         # (B, 1+N, D)
             scores = model.score(state, cand_emb)                             # (B, 1+N)
             labels = torch.zeros(B, dtype=torch.long, device=torch_device)    # positive at index 0
