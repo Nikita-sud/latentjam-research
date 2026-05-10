@@ -135,6 +135,17 @@ def _split_or_fallback(df: pd.DataFrame, split: str, fallback_frac: float = 0.1)
 @click.option("--limit-val", type=int, default=None)
 @click.option("--eval-max-batches", type=int, default=None)
 @click.option(
+    "--init-from",
+    "init_from",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Warm-start the student from an existing SSL checkpoint (e.g. a "
+    "``train_ssl.py`` output). Loads the backbone weights only; optimizer, "
+    "scheduler, and projector start fresh. Pair with a small ``--lr`` "
+    "(3e-5..1e-4) so the SSL features get refined toward the teacher rather "
+    "than overwritten.",
+)
+@click.option(
     "--wandb-log-artifact",
     is_flag=True,
     default=False,
@@ -152,6 +163,7 @@ def main(
     relational_weight: float,
     num_workers: int,
     cache_waveforms: bool,
+    init_from: Path | None,
     train_split: str,
     val_split: str,
     limit_train: int | None,
@@ -182,6 +194,24 @@ def main(
     mel_config = MelConfig()
     mel = LogMelExtractor(mel_config).to(torch_device)
     model = MelCnnStudent(embedding_dim=len(train_df["teacher_embedding"].iloc[0])).to(torch_device)
+
+    init_info: dict[str, Any] = {}
+    if init_from is not None:
+        ckpt = torch.load(str(init_from), map_location=torch_device, weights_only=False)
+        state_dict = ckpt.get("model_state_dict", ckpt)
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        init_info = {
+            "init_from": str(init_from),
+            "init_missing_keys": len(missing),
+            "init_unexpected_keys": len(unexpected),
+            "init_model_version": ckpt.get("model_version") if isinstance(ckpt, dict) else None,
+        }
+        print(
+            f"warm-start from {init_from} "
+            f"(missing={len(missing)}, unexpected={len(unexpected)})",
+            flush=True,
+        )
+
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     train_loader = DataLoader(
@@ -223,6 +253,7 @@ def main(
         "weight_decay": weight_decay,
         "relational_weight": relational_weight,
         "cache_waveforms": cache_waveforms,
+        **init_info,
         "requested_device": device,
         "device": str(torch_device),
         "mel": mel_config.to_dict(),
