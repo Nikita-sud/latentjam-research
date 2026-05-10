@@ -44,6 +44,7 @@ from torch import nn
 
 
 HISTORY_PREDICTOR_VERSION = "history-mlp@k4-d512+time5+session4/v1"
+SCORING_PREDICTOR_VERSION = "history-mlp+scoring@k4-d512+time5+session4/v1"
 
 
 @dataclass
@@ -166,3 +167,121 @@ class HistoryAwarePredictor(nn.Module):
         # corrupt the prediction; the fusion MLP only adds a residual.
         out = h_small_pool + self.residual_scale * offset
         return F.normalize(out, p=2.0, dim=-1)
+
+
+# ---------------------------------------------------------------------------
+# Scoring head (cross-encoder reranker)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ScoringHeadConfig:
+    state_dim: int = 512
+    candidate_dim: int = 512
+    hidden: int = 512
+    dropout: float = 0.1
+    use_state_anchor: bool = True  # add cosine(state, candidate) as a raw input
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "state_dim": self.state_dim,
+            "candidate_dim": self.candidate_dim,
+            "hidden": self.hidden,
+            "dropout": self.dropout,
+            "use_state_anchor": self.use_state_anchor,
+            "predictor_version": SCORING_PREDICTOR_VERSION,
+        }
+
+
+class ScoringHead(nn.Module):
+    """Cross-encoder: ``score(state, candidate) -> scalar``.
+
+    Inputs the four standard cross-encoder features:
+      - state                  (D,)
+      - candidate              (D,)
+      - state * candidate      (D,) elementwise product (encodes alignment)
+      - |state - candidate|    (D,) elementwise abs diff (encodes distance)
+      - cosine(state, candidate)  scalar (raw alignment, optional)
+
+    Body: small MLP -> scalar logit. Trained with listwise softmax CE over
+    (1 positive + N negatives), so it directly optimizes top-1 ranking.
+    """
+
+    def __init__(self, cfg: ScoringHeadConfig):
+        super().__init__()
+        self.cfg = cfg
+        feat_dim = 4 * cfg.candidate_dim + (1 if cfg.use_state_anchor else 0)
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(feat_dim),
+            nn.Linear(feat_dim, cfg.hidden),
+            nn.GELU(),
+            nn.Dropout(cfg.dropout),
+            nn.Linear(cfg.hidden, cfg.hidden),
+            nn.GELU(),
+            nn.Dropout(cfg.dropout),
+            nn.Linear(cfg.hidden, 1),
+        )
+
+    def forward(self, state: torch.Tensor, candidates: torch.Tensor) -> torch.Tensor:
+        """Score every candidate against the state.
+
+        state:      (B, D) or (D,)
+        candidates: (B, N, D) or (N, D) — broadcast B over candidates if state has B.
+
+        Returns: (B, N) or (N,) scalar scores.
+        """
+        squeeze = False
+        if state.dim() == 1:
+            state = state.unsqueeze(0)
+            squeeze = True
+        if candidates.dim() == 2:
+            # (N, D): use the same N for the single state.
+            candidates = candidates.unsqueeze(0)
+        b, n, d = candidates.shape
+        if state.size(0) == 1 and b > 1:
+            state = state.expand(b, -1)
+        # broadcast state across N candidates -> (B, N, D)
+        s = state.unsqueeze(1).expand(-1, n, -1)
+        prod = s * candidates
+        diff = (s - candidates).abs()
+        feats = [s, candidates, prod, diff]
+        if self.cfg.use_state_anchor:
+            cos = (s * candidates).sum(dim=-1, keepdim=True)
+            feats.append(cos)
+        x = torch.cat(feats, dim=-1)             # (B, N, 4D + ?)
+        scores = self.mlp(x).squeeze(-1)          # (B, N)
+        if squeeze:
+            scores = scores.squeeze(0)
+        return scores
+
+
+class HistoryAwareWithScorer(nn.Module):
+    """HistoryAwarePredictor (state encoder) + ScoringHead (cross-encoder).
+
+    At inference the app can do either:
+    - **two-tower**:  state = state_encoder(...); cosine vs library matrix.
+    - **scorer**:     score = scoring_head(state, candidate); pick top-k.
+
+    Train both heads jointly so the state encoder produces a vector that's
+    useful for both fast retrieval (cosine) and precise scoring.
+    """
+
+    def __init__(self, state_cfg: HistoryPredictorConfig, score_cfg: ScoringHeadConfig):
+        super().__init__()
+        self.state_encoder = HistoryAwarePredictor(state_cfg)
+        self.scoring_head = ScoringHead(score_cfg)
+
+    def encode_state(
+        self,
+        history_small: torch.Tensor,
+        history_medium: torch.Tensor,
+        history_large: torch.Tensor,
+        time_features: torch.Tensor,
+        session_features: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.state_encoder(
+            history_small, history_medium, history_large, time_features, session_features
+        )
+
+    def score(self, state: torch.Tensor, candidates: torch.Tensor) -> torch.Tensor:
+        return self.scoring_head(state, candidates)
