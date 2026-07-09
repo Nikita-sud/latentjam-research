@@ -77,6 +77,28 @@ def test_generate_corpus_skips_session_on_empty_generation():
     assert df["session_id"].nunique() == 4
 
 
+def test_generate_corpus_invokes_log_fn_on_skipped_session():
+    ct, eng = _ct(), _eng()
+    grid = build_grid(3, np.random.default_rng(7))
+    logged = []
+
+    def raise_once(spec_, cand, subset):
+        if raise_once.calls == 0:
+            raise_once.calls += 1
+            raise ValueError("malformed JSON from LLM")
+        return [cand.song_ids[i] for i in subset[: spec_.session_len]]
+    raise_once.calls = 0
+
+    df = driver.generate_corpus(ct, eng, grid, model="x", k=20, rng=np.random.default_rng(7),
+                                 generate_fn=raise_once,
+                                 log_fn=lambda idx, exc: logged.append((idx, exc)))
+    assert len(logged) == 1  # exactly the one skipped session is reported
+    logged_idx, logged_exc = logged[0]
+    assert isinstance(logged_idx, int)
+    assert isinstance(logged_exc, ValueError)
+    assert df["session_id"].nunique() == 2  # run continued past the skip
+
+
 def test_generate_corpus_skips_session_on_hallucinated_song_id():
     ct, eng = _ct(), _eng()
     grid = build_grid(3, np.random.default_rng(3))

@@ -55,6 +55,7 @@ def generate_corpus(
     k: int,
     rng: np.random.Generator,
     generate_fn: GenerateFn,
+    log_fn: Callable[[int, Exception], None] | None = None,
 ) -> pd.DataFrame:
     """Pure per-session pipeline: subset -> LLM order -> assemble -> concat.
 
@@ -64,6 +65,10 @@ def generate_corpus(
     ``song_id`` the assembler can't resolve -- must not kill the whole run,
     so both ``generate_fn`` and ``assemble_session`` are wrapped per-session
     and a failing session is simply skipped.
+
+    ``log_fn`` (optional) makes those skips observable: when a session raises,
+    it's called as ``log_fn(session_index, exc)`` before the skip. Left unset
+    (the test default) skipping stays silent, so tests add no log noise.
     """
     del model  # threaded through generate_fn by the caller; unused here
     all_rows: list[dict] = []
@@ -79,10 +84,14 @@ def generate_corpus(
                 user_id=f"{spec.persona.name}-{i}", session_id=f"synth-{i}",
                 start_ts_ms=start_ts_ms, rng=rng,
             )
-        except Exception:
+        except Exception as exc:
             # Task 3's generate can raise on malformed LLM JSON; Task 4's
             # assemble KeyErrors on a hallucinated song_id. Either way: skip
-            # this one session, keep the run going.
+            # this one session, keep the run going -- but surface the cause
+            # via log_fn so a mass-skip (Ollama down / model unpulled / schema
+            # rejected) is debuggable instead of a silent "0/N + gate fail".
+            if log_fn is not None:
+                log_fn(i, exc)
             continue
         all_rows.extend(rows)
     return pd.DataFrame(all_rows, columns=_EXPORT_COLUMNS)
@@ -131,14 +140,36 @@ def main(
 
     grid = build_grid(n_sessions, rng)
 
+    # generate_corpus calls generate_fn once per session in grid order, so a
+    # per-call counter here == the session index. Vary the LLM seed by it
+    # (seed + i): deterministic per --seed, but distinct per session so two
+    # sessions with an identical (spec, subset) don't get identical output.
+    session_seed = {"i": 0}
+
     def real_generate_fn(spec: SessionSpec, cand: CandidateTable, subset: list[int]) -> list[str]:
-        return generate_session(spec, cand, model=model, subset=subset, seed=seed)
+        s = seed + session_seed["i"]
+        session_seed["i"] += 1
+        return generate_session(spec, cand, model=model, subset=subset, seed=s)
+
+    skips = {"n": 0, "first_exc": None}
+
+    def log_fn(session_index: int, exc: Exception) -> None:
+        skips["n"] += 1
+        if skips["first_exc"] is None:
+            skips["first_exc"] = exc
 
     df = generate_corpus(
-        candidates, engagement, grid, model=model, k=k, rng=rng, generate_fn=real_generate_fn
+        candidates, engagement, grid, model=model, k=k, rng=rng,
+        generate_fn=real_generate_fn, log_fn=log_fn,
     )
     n_generated = df["session_id"].nunique()
     click.echo(f"generated {n_generated}/{n_sessions} sessions ({len(df)} events)")
+    if skips["n"] > 0:
+        click.echo(
+            f"generated {n_generated} sessions; skipped {skips['n']} "
+            f"(first error: {skips['first_exc']!r})",
+            err=True,
+        )
 
     df = reweight_sessions(df, target_freq=None, rng=rng)
     n_reweighted = df["session_id"].nunique()
