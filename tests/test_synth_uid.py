@@ -1,5 +1,8 @@
 import csv
 import os
+import sqlite3
+import urllib.parse
+import uuid
 from pathlib import Path
 
 import pytest
@@ -8,6 +11,22 @@ from synth.uid import song_uid, song_uid_auxio, song_uid_mbid
 
 # personal_resolved.csv columns: track_id (the uas… UID), path, title, artist
 GROUND_TRUTH = Path(__file__).resolve().parents[1].parent / "latentjam-research" / "data" / "manifests" / "personal_resolved.csv"
+
+# --- Real-data oracle (full metadata + directory fallback). Both paths are optional;
+# the real-data test skips when either DB is absent (e.g. CI). Override via env. ---
+MUSIC_CACHE_DB = Path(
+    os.environ.get(
+        "LJ_MUSIC_CACHE_DB",
+        "/private/tmp/claude-501/-Users-nichitabulgaru-Documents-LJ-latentjam"
+        "/a067d350-4334-4241-87b2-2ae8ed78ff25/scratchpad/phone-sync-2026-07-09/music_cache.db",
+    )
+)
+PLAYBACK_DB = Path(
+    os.environ.get(
+        "LJ_PLAYBACK_DB",
+        "/Users/nichitabulgaru/Documents/LJ/db-backups/playback_persistence-2026-07-09.db",
+    )
+)
 
 
 def _load_rows():
@@ -99,3 +118,119 @@ def test_auxio_encoding_is_case_insensitive_and_order_sensitive():
     assert song_uid_auxio(name="a", album="b", artists=[]) != song_uid_auxio(
         name="b", album="a", artists=[]
     )
+
+
+# ---------------------------------------------------------------------------
+# Real-data validation against the authoritative on-device metadata + id set.
+# ---------------------------------------------------------------------------
+
+
+def _split_multi(s: str | None) -> list[str]:
+    """Inverse of musikr ``CacheDatabase.Converters.fromMultiValue``.
+
+    Values are ``;``-joined with any literal ``;`` escaped as ``\\;``; recover the
+    exact list the app hashed with ``splitEscaped { it == ';' }`` (unescaping
+    ``\\;`` -> ``;``). See ``musikr/.../util/ParseUtil.kt``.
+    """
+    if not s:
+        return []
+    out: list[str] = []
+    cur: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        a = s[i]
+        b = s[i + 1] if i + 1 < n else None
+        if a == ";":
+            out.append("".join(cur))
+            cur = []
+            i += 1
+        elif b == ";" and a == "\\":
+            cur.append(b)
+            i += 2
+        else:
+            cur.append(a)
+            i += 1
+    if cur:
+        out.append("".join(cur))
+    return out
+
+
+def _document_relpath(uri: str) -> list[str]:
+    """Path components of a SAF document uri (``primary:Music/<file>`` -> ['Music', ...])."""
+    marker = "/document/"
+    idx = uri.find(marker)
+    doc = urllib.parse.unquote(uri[idx + len(marker) :] if idx >= 0 else uri)
+    rel = doc.split(":", 1)  # File.pathSeparator (':') per DocumentPathFactory.fromDocumentId
+    if len(rel) < 2:
+        return []
+    return [c for c in rel[1].split("/") if c]  # Components.parseUnix drops empties
+
+
+def _dir_name_from_uri(uri: str) -> str | None:
+    """``song.file.path.directory.name`` -- the file's parent directory component."""
+    parent = _document_relpath(uri)[:-1]
+    return parent[-1] if parent else None
+
+
+def _filename_stem(uri: str) -> str:
+    """``filename.substringBeforeLast('.')`` fallback for a missing name tag."""
+    comps = _document_relpath(uri)
+    last = comps[-1] if comps else ""
+    return last.rsplit(".", 1)[0] if "." in last else last
+
+
+def _valid_mbid(s: str | None) -> str | None:
+    if not s:
+        return None
+    try:
+        uuid.UUID(s)
+    except ValueError:
+        return None
+    return s
+
+
+@pytest.mark.skipif(
+    not (MUSIC_CACHE_DB.exists() and PLAYBACK_DB.exists()),
+    reason=f"real-data DBs absent ({MUSIC_CACHE_DB} / {PLAYBACK_DB})",
+)
+def test_reproduces_real_ondevice_uids_from_cache():
+    """Definitive validation: full metadata from CachedFileData -> real songUid ids.
+
+    For every CachedFileData row, apply the real algorithm (MBID path when present,
+    else auxio with ``albumName ?: directory-name`` and the ;-split raw
+    artist/album-artist lists, date, track, disc) and assert the computed UID is one
+    of the real on-device ids in TrackEmbeddingEntity. This is the authoritative
+    oracle (full metadata + the directory fallback the CSV lacked).
+    """
+    with sqlite3.connect(f"file:{PLAYBACK_DB}?mode=ro", uri=True) as gt_con:
+        ground_truth = {row[0] for row in gt_con.execute("SELECT songUid FROM TrackEmbeddingEntity")}
+    assert ground_truth, "expected on-device songUid ids in TrackEmbeddingEntity"
+
+    with sqlite3.connect(f"file:{MUSIC_CACHE_DB}?mode=ro", uri=True) as cache_con:
+        cache_con.row_factory = sqlite3.Row
+        rows = list(
+            cache_con.execute(
+                "SELECT uri, name, albumName, artistNames, albumArtistNames, "
+                "date, track, disc, musicBrainzId FROM CachedFileData"
+            )
+        )
+    assert rows, "expected CachedFileData rows"
+
+    matched = 0
+    for r in rows:
+        name = r["name"] if r["name"] else _filename_stem(r["uri"])
+        album = r["albumName"] if r["albumName"] is not None else _dir_name_from_uri(r["uri"])
+        got = song_uid(
+            mbid=_valid_mbid(r["musicBrainzId"]),
+            name=name,
+            album=album,
+            artists=_split_multi(r["artistNames"]),
+            album_artists=_split_multi(r["albumArtistNames"]),
+            date=r["date"] or None,
+            track=r["track"],
+            disc=r["disc"],
+        )
+        matched += got in ground_truth
+
+    rate = matched / len(rows)
+    assert rate >= 0.99, f"only {matched}/{len(rows)} ({rate:.2%}) reproduced real on-device ids"

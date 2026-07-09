@@ -34,10 +34,10 @@ Caller caveats:
 - ``date`` must already be the app's normalized ISO-8601 ``Date.toString()``
   form (e.g. ``"2022"``, ``"2015-06-15"``), not a raw tag string -- the app
   hashes the parsed/normalized value.
-- The app also hashes ``albumArtistNames`` after ``artistNames``. This interface
-  exposes only ``artists`` (album-artist names are assumed empty, the common
-  case). Songs whose files carried a distinct album-artist tag will not
-  reproduce through this function.
+- The app hashes ``albumArtistNames`` after ``artistNames``. Pass them via
+  ``album_artists`` (defaults to empty). ``artists``/``album_artists`` are the
+  RAW tag lists (v363 does not separator-split them); in ``CachedFileData`` they
+  are the ``;``-joined ``artistNames``/``albumArtistNames`` columns.
 """
 
 from __future__ import annotations
@@ -80,6 +80,7 @@ def _auxio_payload(
     date: str | None,
     track: int | None,
     disc: int | None,
+    album_artists: list[str],
 ) -> bytes:
     """Assemble the exact bytes musikr hashes for a Song's auxio (v363) UID."""
     h = bytearray()
@@ -94,6 +95,8 @@ def _auxio_payload(
     _update_int(h, disc)
     for artist in artists:  # artistNames, each lowercased
         _update_string(h, artist)
+    for album_artist in album_artists:  # albumArtistNames, each lowercased
+        _update_string(h, album_artist)
     return bytes(h)
 
 
@@ -105,11 +108,18 @@ def song_uid_auxio(
     date: str | None = None,
     track: int | None = None,
     disc: int | None = None,
+    album_artists: list[str] | None = None,
 ) -> str:
     """Return the ``uas…`` UID for a song that has no MusicBrainz recording id."""
     u = _uuid_from_sha256(
         _auxio_payload(
-            name=name, album=album, artists=artists, date=date, track=track, disc=disc
+            name=name,
+            album=album,
+            artists=artists,
+            date=date,
+            track=track,
+            disc=disc,
+            album_artists=album_artists or [],
         )
     )
     return f"u{_AUXIO}{_SONG}{u}"
@@ -129,10 +139,17 @@ def song_uid(
     date: str | None = None,
     track: int | None = None,
     disc: int | None = None,
+    album_artists: list[str] | None = None,
 ) -> str:
     """Reproduce ``Music.UID`` for a song: MBID path when present, else auxio hash."""
     if mbid:
         return song_uid_mbid(mbid)
     return song_uid_auxio(
-        name=name, album=album, artists=artists, date=date, track=track, disc=disc
+        name=name,
+        album=album,
+        artists=artists,
+        date=date,
+        track=track,
+        disc=disc,
+        album_artists=album_artists,
     )
