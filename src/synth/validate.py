@@ -45,8 +45,30 @@ def validate_corpus(
     real_genres = real_events["song_id"].map(genre_of).dropna()
     genre_kl = kl_divergence(_dist(syn_genres, support), _dist(real_genres, support))
 
-    coverage = sessions["song_id"].nunique() / max(len(manifest), 1)
-    completion_delta = abs(sessions["completed"].mean() - real_events["completed"].mean())
+    # Coverage counts only manifest-present ids: hallucinated ids not in the manifest
+    # must never inflate coverage (else a mode-collapsed corpus padded with fake ids passes).
+    manifest_ids = set(manifest["song_id"])
+    covered = sessions["song_id"][sessions["song_id"].isin(manifest_ids)].nunique()
+    coverage = covered / max(len(manifest), 1)
+
+    failures = []
+    if genre_kl > max_genre_kl:
+        failures.append(f"genre_kl {genre_kl:.3f} > {max_genre_kl}")
+    if coverage < min_coverage:
+        failures.append(f"coverage {coverage:.3f} < {min_coverage}")
+
+    # Missing/NaN completion signal must fail safe (FAIL), not fail open. An empty or all-NaN
+    # `completed` column makes `.mean()` NaN and `NaN > threshold` False, silently skipping the
+    # check; treat it as a failure instead.
+    syn_mean = sessions["completed"].mean()
+    real_mean = real_events["completed"].mean()
+    if not np.isfinite(syn_mean) or not np.isfinite(real_mean):
+        failures.append("completion signal missing or NaN")
+        completion_delta = float("nan")
+    else:
+        completion_delta = abs(syn_mean - real_mean)
+        if completion_delta > max_completion_delta:
+            failures.append(f"completion_delta {completion_delta:.3f} > {max_completion_delta}")
 
     metrics = {
         "genre_kl": genre_kl,
@@ -54,11 +76,4 @@ def validate_corpus(
         "completion_delta": completion_delta,
         "n_sessions_events": int(len(sessions)),
     }
-    failures = []
-    if genre_kl > max_genre_kl:
-        failures.append(f"genre_kl {genre_kl:.3f} > {max_genre_kl}")
-    if coverage < min_coverage:
-        failures.append(f"coverage {coverage:.3f} < {min_coverage}")
-    if completion_delta > max_completion_delta:
-        failures.append(f"completion_delta {completion_delta:.3f} > {max_completion_delta}")
     return ValidationReport(passed=not failures, metrics=metrics, failures=failures)
