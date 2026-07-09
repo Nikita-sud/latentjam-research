@@ -23,6 +23,12 @@ def test_parse_drops_invalid_and_maps():
     assert out == ["uas-1", "uas-0"]  # dedup, drop out-of-range(9), keep order
 
 
+def test_parse_truncates_to_session_len():
+    idx_map = {0: "uas-0", 1: "uas-1", 2: "uas-2", 3: "uas-3"}
+    out = parse_session({"track_indices": [0, 1, 2, 3]}, idx_map, session_len=2)
+    assert out == ["uas-0", "uas-1"]  # more valid indices than session_len -> truncated
+
+
 def test_generate_session_calls_llm_and_maps(monkeypatch):
     ct = _candidates(5)
     spec = SessionSpec(Persona("explorer", 0.6, 0.3, 0.9), "discovery", session_len=3)
@@ -37,6 +43,27 @@ def test_generate_session_calls_llm_and_maps(monkeypatch):
 
     out = generate_session(spec, ct, model="qwen3.6:35b", subset=[0, 1, 2, 3, 4], http_post=fake_post, seed=0)
     assert out == ["uas-2", "uas-0", "uas-4"]
+
+
+def test_generate_session_remaps_strict_subset_indices():
+    # A strict, out-of-order subset: subset-local index 0 -> global row 4,
+    # subset-local index 1 -> global row 1. The LLM sees a 0..len(subset)-1
+    # renumbering and its indices must map back to the correct global song_ids.
+    ct = _candidates(6)
+    spec = SessionSpec(Persona("explorer", 0.6, 0.3, 0.9), "discovery", session_len=2)
+
+    def fake_post(url, json, timeout):
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"message": {"content": '{"track_indices": [1, 0]}'}}
+        return R()
+
+    out = generate_session(spec, ct, model="m", subset=[4, 1], http_post=fake_post, seed=0)
+    # subset-local 1 -> global row 1, subset-local 0 -> global row 4
+    assert out == [ct.song_ids[1], ct.song_ids[4]]
+    assert out == ["uas-1", "uas-4"]
 
 
 def test_build_prompt_numbers_candidates():
