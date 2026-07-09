@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from synth.cachedfile import song_id_from_cached_file, split_multi
+from synth.cachedfile import filename_stem, song_id_from_cached_file, split_multi
 
 _COLUMNS = ["song_id", "title", "artist", "album", "genre", "year", "language", "bpm", "energy"]
 
@@ -52,9 +52,16 @@ def _first_or_none(values: list[str]) -> str | None:
 def _track_record(row: dict[str, object]) -> dict[str, object]:
     """One manifest row's metadata columns (everything except the joined features)."""
     bpm = row.get("bpm")
+    name = row.get("name")
+    if name is None:
+        # Same untitled-track fallback the id hash uses (song_id_from_cached_file),
+        # so a null-name track's displayed title matches what was actually hashed.
+        title = filename_stem(str(row.get("uri") or ""))
+    else:
+        title = name or None
     return {
         "song_id": song_id_from_cached_file(row),
-        "title": row.get("name") or None,
+        "title": title,
         "artist": _first_or_none(split_multi(row.get("artistNames"))),  # type: ignore[arg-type]
         "album": row.get("albumName") or None,
         "genre": _first_or_none(split_multi(row.get("genreNames"))),  # type: ignore[arg-type]

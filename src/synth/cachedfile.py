@@ -79,11 +79,14 @@ def directory_name(uri: str) -> str | None:
     return parent[-1] if parent else None
 
 
-def _filename_stem(uri: str) -> str:
+def filename_stem(uri: str) -> str:
     """``filename.substringBeforeLast('.')`` -- name fallback when the title tag is absent."""
     comps = _document_relpath(uri)
     last = comps[-1] if comps else ""
     return last.rsplit(".", 1)[0] if "." in last else last
+
+
+_filename_stem = filename_stem  # internal alias for existing call sites in this module
 
 
 def valid_mbid(value: str | None) -> str | None:
@@ -105,19 +108,20 @@ def song_id_from_cached_file(row: Mapping[str, object]) -> str:
     """
     uri = str(row.get("uri") or "")
     name = row.get("name")
-    if not name:  # missing title tag -> file stem (substringBeforeLast('.'))
+    if name is None:  # missing title tag -> file stem (substringBeforeLast('.'))
         name = _filename_stem(uri)
     album_name = row.get("albumName")
     album = album_name if album_name is not None else directory_name(uri)
     track = row.get("track")
     disc = row.get("disc")
+    date = row.get("date")
     return song_uid(
         mbid=valid_mbid(row.get("musicBrainzId")),  # type: ignore[arg-type]
         name=str(name),
         album=album,  # type: ignore[arg-type]
         artists=split_multi(row.get("artistNames")),  # type: ignore[arg-type]
         album_artists=split_multi(row.get("albumArtistNames")),  # type: ignore[arg-type]
-        date=(str(row.get("date")) if row.get("date") else None),
+        date=(str(date) if date is not None else None),
         track=int(track) if track is not None else None,
         disc=int(disc) if disc is not None else None,
     )

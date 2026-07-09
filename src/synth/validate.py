@@ -49,7 +49,9 @@ def validate_corpus(
     # must never inflate coverage (else a mode-collapsed corpus padded with fake ids passes).
     manifest_ids = set(manifest["song_id"])
     covered = sessions["song_id"][sessions["song_id"].isin(manifest_ids)].nunique()
-    coverage = covered / max(len(manifest), 1)
+    # Denominator is the count of *distinct* manifest ids, not row count: duplicate
+    # song_id rows in the manifest must not cap achievable coverage below 1.0.
+    coverage = covered / max(manifest["song_id"].nunique(), 1)
 
     failures = []
     if genre_kl > max_genre_kl:

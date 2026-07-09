@@ -16,7 +16,7 @@ import uuid
 
 import pandas as pd
 
-from synth.cachedfile import song_id_from_cached_file
+from synth.cachedfile import filename_stem, song_id_from_cached_file
 from synth.manifest import build_manifest
 
 _URI = (
@@ -221,3 +221,37 @@ def test_build_manifest_backfills_genre_and_language_from_audit_csv(tmp_path):
     # Row A already had a real genre tag -> audit backfill must not override it.
     row_a = by_id.loc[sid_auxio]
     assert row_a["genre"] == "Ambient"
+
+
+def test_build_manifest_title_falls_back_to_filename_stem_when_name_is_null(tmp_path):
+    # song_id_from_cached_file hashes the filename stem in for an untitled track
+    # (null `name`); the manifest's displayed `title` must use that same stem,
+    # not None, so the id and the human-readable title agree on what the track
+    # is called (Fix 5).
+    cache = tmp_path / "music_cache.db"
+    playback = tmp_path / "playback.db"
+    untitled_uri = _URI.format("UntitledTrack.mp3")
+    row_untitled = _row(
+        uri=untitled_uri,
+        name=None,
+        artist_names="Some Artist",
+        album_name="Some Album",
+        genre_names="Rock",
+        date="2015",
+        bpm=100,
+        track=None,
+        disc=None,
+    )
+    _make_cache_db(cache, [row_untitled])
+    _make_playback_db(playback, {})
+
+    df = build_manifest(str(cache), str(playback))
+
+    expected_song_id = song_id_from_cached_file(row_untitled)
+    expected_title = filename_stem(untitled_uri)
+    assert expected_title == "UntitledTrack"
+
+    assert len(df) == 1
+    row = df.iloc[0]
+    assert row["song_id"] == expected_song_id
+    assert row["title"] == expected_title

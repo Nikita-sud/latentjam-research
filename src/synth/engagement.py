@@ -14,8 +14,18 @@ _SKIP_PROB_CLIP = (0.02, 0.98)
 
 def load_real_events(db_or_csv: str) -> pd.DataFrame:
     if db_or_csv.endswith(".csv"):
-        return pd.read_csv(db_or_csv)
-    return pd.read_sql_query("SELECT * FROM ListeningEventEntity", sqlite3.connect(db_or_csv))
+        events = pd.read_csv(db_or_csv)
+    else:
+        events = pd.read_sql_query(
+            "SELECT * FROM ListeningEventEntity", sqlite3.connect(db_or_csv)
+        )
+    # ListeningEventEntity's id column is `songUid`; validate_corpus (and the rest
+    # of the synth pipeline) key everything on `song_id`, matching the manifest's
+    # existing `songUid AS song_id` convention. Rename if present; leave frames
+    # that already use `song_id` (e.g. pre-normalized CSV fixtures) untouched.
+    if "songUid" in events.columns:
+        events = events.rename(columns={"songUid": "song_id"})
+    return events
 
 
 def _frac_summary(frac: pd.Series, default_mean: float, default_std: float) -> tuple[float, float]:
@@ -58,8 +68,6 @@ class EngagementModel:
         self._t = targets
         reasons = targets["finalize_reason"]
         self._reason_names = list(reasons)
-        self._reason_probs = np.array([reasons[r] for r in self._reason_names], dtype=float)
-        self._reason_probs = self._reason_probs / self._reason_probs.sum()
         # Completed rows never carry USER_SKIPPED: sample them from the remaining
         # reasons, renormalized, so the skipped mass is redistributed proportionally
         # instead of dumped entirely onto TRACK_ENDED.
