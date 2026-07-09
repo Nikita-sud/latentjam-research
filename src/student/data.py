@@ -33,23 +33,27 @@ def load_fma_manifest(
     if not csv_path.exists():
         raise FileNotFoundError(f"FMA tracks.csv not found at {csv_path}")
 
-    tracks = pd.read_csv(csv_path, index_col=0, header=[0, 1])
+    tracks = pd.read_csv(csv_path, index_col=0, header=[0, 1], low_memory=False)
     split_col = ("set", "split")
     split = tracks[split_col] if split_col in tracks.columns else "training"
-    artist_id_col = ("artist", "id")
-    artist_name_col = ("artist", "name")
+
+    def _opt(col: tuple[str, str]):
+        return tracks[col] if col in tracks.columns else None
+
     df = pd.DataFrame(
         {
             "fma_track_id": tracks.index.astype(int),
             "subset": tracks[("set", "subset")],
             "split": split,
             "genre_top": tracks[("track", "genre_top")],
-            "artist_id": tracks[artist_id_col]
-            if artist_id_col in tracks.columns
-            else None,
-            "artist_name": tracks[artist_name_col]
-            if artist_name_col in tracks.columns
-            else None,
+            "artist_id": _opt(("artist", "id")),
+            "artist_name": _opt(("artist", "name")),
+            # session-context fields (added for predictor / album sessions)
+            "album_id": _opt(("album", "id")),
+            "album_title": _opt(("album", "title")),
+            "album_date_released": _opt(("album", "date_released")),
+            "track_title": _opt(("track", "title")),
+            "track_number": _opt(("track", "number")),
         }
     )
     df = df[df["subset"].isin(_subset_levels(subset))]
@@ -136,14 +140,65 @@ def iter_fma_windows(
             }
 
 
+def _ffmpeg_decode_window(
+    path: str | Path, start_sample: int, *, target_sr: int, window_samples: int
+) -> np.ndarray | None:
+    """Decode exactly ``window_samples`` mono float32 samples @ target_sr via ffmpeg.
+
+    Seeks before -i so we don't waste time decoding-then-discarding. Subprocess
+    isolates SIGBUS / libmpg123 crashes on malformed FMA mp3s — the child dies,
+    the parent gets a non-zero return and we return None.
+    """
+    import subprocess
+
+    start_seconds = max(0.0, float(start_sample) / float(target_sr))
+    duration_seconds = float(window_samples) / float(target_sr)
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel", "error",
+                "-ss", f"{start_seconds:.3f}",
+                "-i", str(path),
+                "-t", f"{duration_seconds:.3f}",
+                "-f", "f32le",
+                "-ac", "1",
+                "-ar", str(target_sr),
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if not result.stdout:
+        return None
+    return np.frombuffer(result.stdout, dtype=np.float32).copy()
+
+
 def load_window(path: str | Path, start_sample: int, *, target_sr: int, window_samples: int) -> np.ndarray:
-    wav = load_audio(path, target_sr=target_sr)
-    start = max(0, int(start_sample))
-    end = start + window_samples
+    wav = _ffmpeg_decode_window(
+        path, start_sample, target_sr=target_sr, window_samples=window_samples
+    )
     out = np.zeros(window_samples, dtype=np.float32)
-    if start < wav.shape[0]:
-        chunk = wav[start:end]
-        out[: chunk.shape[0]] = chunk
+    if wav is None:
+        # ffmpeg failed (corrupt mp3 / SIGBUS). Fall back to soundfile so a
+        # single bad file does not collapse the dataset; if soundfile also
+        # crashes the worker, that worker will respawn (DataLoader behavior).
+        try:
+            wav = load_audio(path, target_sr=target_sr)
+            start = max(0, int(start_sample))
+            end = start + window_samples
+            if start < wav.shape[0]:
+                chunk = wav[start:end]
+                out[: chunk.shape[0]] = chunk
+        except Exception:
+            pass
+        return out
+    n = min(wav.shape[0], window_samples)
+    out[:n] = wav[:n]
     return out
 
 
