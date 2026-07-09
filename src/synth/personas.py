@@ -27,11 +27,13 @@ _ARCHETYPES = [
     ("power_user", 0.9, 0.5, 0.7),
 ]
 
-# Default goal weights: over-sample the long-tail to counter head bias.
+# Default goal weights: mildly over-sample the long-tail to counter head bias.
+# (Softened from 1.5 after the pilot showed the stronger skew pushed genre KL-vs-real up;
+# long-tail goals stay strictly above the head so debiasing is preserved.)
 _DEFAULT_GOAL_WEIGHTS = {
-    "workout": 1.0, "focus": 1.2, "evening_chill": 1.0, "anime_binge": 1.5,
-    "russian_throwback": 1.5, "disco_eurodance_party": 1.0,
-    "film_score_ambient": 0.8, "discovery": 1.5,
+    "workout": 1.0, "focus": 1.2, "evening_chill": 1.0, "anime_binge": 1.3,
+    "russian_throwback": 1.3, "disco_eurodance_party": 1.0,
+    "film_score_ambient": 0.8, "discovery": 1.3,
 }
 
 
