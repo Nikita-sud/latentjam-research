@@ -32,3 +32,16 @@ def test_reweight_flattens_head_and_bounds_drop():
     head_before = (ev["track_id"] == "uas-0").mean()
     head_after = (out["track_id"] == "uas-0").mean()
     assert head_after <= head_before  # head share not increased
+
+
+def test_reweight_bound_holds_when_one_session_dominates():
+    # Regression guard: one session holds ~90% of the rows, so dropping it alone would blow
+    # far past max_drop. The bound must be enforced by checking the *post-drop* total, not the
+    # pre-drop undecided count -- a pre-drop check lets this single big session get dropped and
+    # collapses the corpus to ~10% (below the 50% floor). Loop seeds so a revert to the buggy
+    # pre-drop check fails deterministically (it keeps the big session only on some seeds).
+    ev = pd.DataFrame({"session_id": ["big"]*90 + [f"s{i}" for i in range(10)],
+                       "track_id": ["uas-0"]*90 + [f"uas-{i+1}" for i in range(10)]})
+    for seed in range(1, 6):
+        out = reweight_sessions(ev, target_freq=None, rng=np.random.default_rng(seed), max_drop=0.5)
+        assert len(out) >= 0.5 * len(ev)  # never drops more than max_drop, even for one huge session
